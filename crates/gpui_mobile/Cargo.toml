@@ -1,0 +1,114 @@
+[package]
+name = "gpui_mobile"
+version = "0.1.0"
+edition.workspace = true
+authors = ["Balamurali Pandranki <balamurali@live.com>"]
+license = "GPL-3.0-or-later OR AGPL-3.0-or-later OR Apache-2.0"
+description = "Mobile platform support for GPUI — iOS (wgpu/Metal) and Android (wgpu/Vulkan)"
+repository = "https://github.com/gpui-ce/gpui-ce"
+keywords = ["gui", "mobile", "ios", "android", "gpui"]
+categories = ["gui", "os"]
+
+[lints]
+workspace = true
+
+[features]
+default = ["url_launcher", "shared_preferences", "path_provider",
+           "package_info", "device_info", "connectivity", "network_info", "vibration",
+           "battery", "share", "sensors", "webview", "file_selector", "image_picker", "camera",
+           "permission_handler", "notifications", "location", "audio", "video_player",
+           "clipboard", "local_auth", "in_app_review", "contacts", "maps_launcher",
+           "calendar", "deeplink", "microphone", "maps", "media_session"]
+url_launcher = []
+shared_preferences = []
+path_provider = []
+package_info = []
+device_info = []
+connectivity = []
+network_info = []
+vibration = []
+battery = []
+share = []
+sensors = []
+webview = []
+file_selector = []
+image_picker = []
+camera = []
+permission_handler = []
+notifications = []
+location = []
+audio = []
+video_player = []
+clipboard = []
+local_auth = []
+in_app_review = []
+contacts = []
+maps_launcher = []
+maps = []
+calendar = []
+deeplink = []
+microphone = []
+media_session = []
+
+[lib]
+crate-type = ["staticlib", "cdylib", "rlib"]
+
+# ── shared deps (all platforms) ──────────────────────────────────────────────
+
+[dependencies]
+anyhow.workspace = true
+log.workspace = true
+parking_lot.workspace = true
+futures.workspace = true
+raw-window-handle = "0.6"
+
+# ── GPUI core crate (workspace local, no default features for mobile) ────────
+gpui = { path = "../gpui/", version = "0.2.2", default-features = false }
+
+# ── iOS ──────────────────────────────────────────────────────────────────────
+
+[target.'cfg(target_os = "ios")'.dependencies]
+# Objective-C runtime
+objc2 = "0.6"
+
+# Apple frameworks
+core-foundation.workspace = true
+core-foundation-sys.workspace = true
+core-graphics = "0.24"
+core-text = "21"
+uuid.workspace = true
+block2 = "0.6"
+
+# wgpu renderer (Metal backend on iOS)
+gpui_wgpu = { path = "../gpui_wgpu/", version = "0.1.0", features = ["font-kit"] }
+wgpu.workspace = true
+
+# Text / font stack
+pathfinder_geometry = "0.5"
+smallvec.workspace = true
+
+# font-kit (same pin as gpui upstream)
+font-kit = { version = "0.14.1-zed", package = "zed-font-kit" }
+
+# ── Android ──────────────────────────────────────────────────────────────────
+
+[target.'cfg(target_os = "android")'.dependencies]
+# JNI / NDK bindings
+jni = "0.22"
+libc.workspace = true
+ndk = { version = "0.9", features = ["nativewindow"] }
+ndk-context = "0.1"
+ndk-sys = "0.6"
+
+# Activity glue layer
+android-activity = { version = "0.6", features = ["native-activity"] }
+
+# Logging to logcat
+android_logger = "0.15"
+
+# wgpu renderer (Vulkan backend on Android)
+gpui_wgpu = { path = "../gpui_wgpu/", version = "0.1.0", features = ["font-kit"] }
+
+# rustc-hash is required by the PlatformKeyboardMapper trait signature
+rustc-hash = "2"
+uuid.workspace = true
