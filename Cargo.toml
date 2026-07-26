@@ -22,6 +22,7 @@ members = [
   "./tooling/perf/",
   "./examples/counter/",
   "./crates/gpui_mobile/",
+  "./crates/gpui_webview/",
 ]
 default-members = ["./crates/gpui/"]
 resolver = "3"
@@ -139,6 +140,9 @@ gpui_macros = { path = "./crates/gpui_macros/", version = "0.1.0" }
 gpui_shared_string = { path = "./crates/gpui_shared_string/", version = "0.1.0" }
 gpui_tokio = { path = "./crates/gpui_tokio/", version = "0.1.0" }
 gpui_mobile = { path = "./crates/gpui_mobile/", version = "0.1.0" }
+gpui_webview = { path = "./crates/gpui_webview/", version = "0.1.0" }
+
+wry = "0.55"
 
 [workspace.dependencies.windows]
 version = "0.61"

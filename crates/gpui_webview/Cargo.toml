@@ -1,0 +1,13 @@
+[package]
+name = "gpui_webview"
+version = "0.1.0"
+edition = "2024"
+
+[features]
+default = ["webview"]
+webview = ["dep:wry"]
+
+[dependencies]
+gpui.workspace = true
+raw-window-handle = "0.6"
+wry = { workspace = true, optional = true }
