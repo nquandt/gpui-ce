@@ -32,6 +32,11 @@ pub(crate) const WM_GPUI_KEYDOWN: u32 = WM_USER + 8;
 
 const SIZE_MOVE_LOOP_TIMER_ID: usize = 1;
 
+/// Emit `TRACE` lines for raw window messages (WM_CHAR, mouse) to stderr.
+/// Enabled by setting the `GPUI_TRACE` environment variable to any value.
+static TRACE: std::sync::LazyLock<bool> =
+    std::sync::LazyLock::new(|| std::env::var_os("GPUI_TRACE").is_some());
+
 impl WindowsWindowInner {
     pub(crate) fn handle_msg(
         self: &Rc<Self>,
@@ -420,9 +425,15 @@ impl WindowsWindowInner {
 
     fn handle_char_msg(&self, wparam: WPARAM) -> Option<isize> {
         let input = self.parse_char_message(wparam)?;
-        self.with_input_handler(|input_handler| {
+        if *TRACE {
+            eprintln!("TRACE WM_CHAR input: {input:?}");
+        }
+        let r = self.with_input_handler(|input_handler| {
             input_handler.replace_text_in_range(None, &input);
         });
+        if *TRACE {
+            eprintln!("TRACE WM_CHAR handler: {r:?}");
+        }
 
         Some(0)
     }
@@ -435,11 +446,19 @@ impl WindowsWindowInner {
     ) -> Option<isize> {
         unsafe { SetCapture(handle) };
 
+        // The user clicked on GPUI's own surface (not a native child like the
+        // webview), so take OS keyboard focus. Otherwise a native child that
+        // grabbed focus earlier (e.g. WebView2) keeps receiving WM_CHAR.
+        unsafe { SetFocus(Some(handle)).log_err() };
+
         let Some(mut func) = self.state.callbacks.input.take() else {
             return Some(1);
         };
         let x = lparam.signed_loword();
         let y = lparam.signed_hiword();
+        if *TRACE {
+            eprintln!("TRACE mouse down button={button:?} at ({x},{y})");
+        }
         let physical_point = point(DevicePixels(x as i32), DevicePixels(y as i32));
         let click_count = self.state.click_state.update(button, physical_point);
         let scale_factor = self.state.scale_factor.get();

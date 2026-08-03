@@ -1,6 +1,6 @@
 use gpui::{Bounds, Pixels, SharedString, Window, App};
 use super::PlatformWebView;
-use crate::WebViewConfig;
+use crate::webview::WebViewConfig;
 
 pub(crate) struct StubWebView;
 
@@ -22,7 +22,7 @@ impl PlatformWebView for StubWebView {
     fn evaluate_javascript(
         &self,
         _: &str,
-        _: Option<Box<dyn FnOnce(Result<String, String>)>>,
+        _: Option<Box<dyn FnOnce(Result<String, String>) + Send>>,
     ) {
     }
     fn title(&self) -> SharedString {

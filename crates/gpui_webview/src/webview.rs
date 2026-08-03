@@ -1,15 +1,14 @@
 use gpui::{
     App, Bounds, Element, ElementId, GlobalElementId, InspectorElementId, IntoElement, LayoutId,
-    Pixels, SharedString, Style, StyleRefinement, Styled, Window,
+    Pixels, Refineable, SharedString, Style, StyleRefinement, Styled, Window,
 };
-use refineable::Refineable;
-use std::cell::RefCell;
 use std::rc::Rc;
 
 use crate::platform::{self, PlatformWebView};
 use crate::webview_handle::WebViewHandle;
 
 /// Configuration for creating a platform webview.
+#[allow(dead_code)]
 pub(crate) struct WebViewConfig {
     pub url: Option<String>,
     pub html: Option<String>,
@@ -38,6 +37,7 @@ impl Default for WebViewConfig {
 pub(crate) struct WebViewState {
     pub(crate) platform_webview: Rc<dyn PlatformWebView>,
     pub(crate) last_bounds: Bounds<Pixels>,
+    pub(crate) last_known_url: SharedString,
 }
 
 /// A cross-platform native webview element for GPUI.
@@ -64,6 +64,7 @@ pub struct WebView {
     config: WebViewConfig,
     on_navigation: Option<Box<dyn FnMut(&str) -> bool>>,
     on_page_load: Option<Box<dyn FnMut(&str)>>,
+    on_url_changed: Option<Box<dyn FnMut(&str, &mut Window, &mut App)>>,
     on_create_handle: Option<Box<dyn FnMut(WebViewHandle, &mut Window, &mut App)>>,
     style: StyleRefinement,
 }
@@ -76,6 +77,7 @@ impl WebView {
             config: WebViewConfig::default(),
             on_navigation: None,
             on_page_load: None,
+            on_url_changed: None,
             on_create_handle: None,
             style: StyleRefinement::default(),
         }
@@ -123,6 +125,19 @@ impl WebView {
         self
     }
 
+    /// Callback fired whenever the webview's main-frame URL changes.
+    ///
+    /// The URL is polled each frame and the callback is invoked with the new
+    /// URL. This is useful for keeping an address bar in sync with internal
+    /// page navigation (link clicks, redirects, etc.).
+    pub fn on_url_changed(
+        mut self,
+        callback: impl FnMut(&str, &mut Window, &mut App) + 'static,
+    ) -> Self {
+        self.on_url_changed = Some(Box::new(callback));
+        self
+    }
+
     /// Callback fired when the webview is first created, providing a handle.
     pub fn on_create_handle(
         mut self,
@@ -147,13 +162,13 @@ impl IntoElement for WebView {
 
 impl Element for WebView {
     type RequestLayoutState = Style;
-    type PrepaintState = Option<WebViewState>;
+    type PrepaintState = Option<WebViewHandle>;
 
     fn id(&self) -> Option<ElementId> {
         Some(self.element_id())
     }
 
-    fn source_location(&self) -> Option<&'static panic::Location<'static>> {
+    fn source_location(&self) -> Option<&'static std::panic::Location<'static>> {
         None
     }
 
@@ -179,36 +194,67 @@ impl Element for WebView {
         window: &mut Window,
         cx: &mut App,
     ) -> Self::PrepaintState {
-        window.with_optional_element_state(id, |state, window| {
-            let mut state = state.unwrap_or(None);
+        window.with_optional_element_state::<WebViewState, Option<WebViewHandle>>(
+            id,
+            |state, window| {
+                let is_first_creation = !matches!(state, Some(Some(_)));
+                let mut webview_state = match state {
+                    Some(Some(ref prev)) => {
+                        // Update bounds if changed
+                        if prev.last_bounds != bounds {
+                            prev.platform_webview.set_bounds(bounds);
+                        }
+                        WebViewState {
+                            platform_webview: prev.platform_webview.clone(),
+                            last_bounds: bounds,
+                            last_known_url: prev.last_known_url.clone(),
+                        }
+                    }
+                    _ => {
+                        // First prepaint: create the native webview
+                        self.config.bounds = bounds;
+                        let platform_webview =
+                            platform::create_platform_webview(window, &self.config, cx);
+                        let rc: Rc<dyn PlatformWebView> = Rc::from(platform_webview);
+                        WebViewState {
+                            platform_webview: rc,
+                            last_bounds: bounds,
+                            last_known_url: SharedString::default(),
+                        }
+                    }
+                };
 
-            if state.is_none() {
-                // First prepaint: create the native webview
-                self.config.bounds = bounds;
-                let platform_webview =
-                    platform::create_platform_webview(window, &self.config, cx);
-                let rc = Rc::from(platform_webview);
-                let handle = WebViewHandle::new(rc.clone());
+                let handle = WebViewHandle::new(webview_state.platform_webview.clone());
 
-                state = Some(WebViewState {
-                    platform_webview: rc,
-                    last_bounds: bounds,
-                });
-
-                // Fire the on_create_handle callback
-                if let Some(ref mut callback) = self.on_create_handle {
-                    callback(handle, window, cx);
+                // Detect main-frame URL changes (e.g. internal navigation) and
+                // notify observers. `url()` reports the top-level document URL,
+                // so sub-frame navigations don't trigger spurious updates.
+                let current_url = webview_state.platform_webview.url();
+                if current_url != webview_state.last_known_url {
+                    let changed_url = current_url.clone();
+                    webview_state.last_known_url = current_url;
+                    // Ignore the transient blank state right after creation.
+                    if !changed_url.is_empty() && changed_url != "about:blank" {
+                        if let Some(ref mut callback) = self.on_url_changed {
+                            callback(&changed_url, window, cx);
+                            // Callbacks fired from prepaint run mid-draw, where
+                            // entity-change notifications can't schedule a
+                            // redraw, so request one explicitly.
+                            window.defer(cx, |window, _cx| window.refresh());
+                        }
+                    }
                 }
-            } else if let Some(ref mut webview_state) = state {
-                // Update bounds if changed
-                if webview_state.last_bounds != bounds {
-                    webview_state.platform_webview.set_bounds(bounds);
-                    webview_state.last_bounds = bounds;
-                }
-            }
 
-            (state, state)
-        })
+                // Fire the on_create_handle callback on first creation
+                if is_first_creation {
+                    if let Some(ref mut callback) = self.on_create_handle {
+                        callback(handle.clone(), window, cx);
+                    }
+                }
+
+                (Some(handle), Some(webview_state))
+            },
+        )
     }
 
     fn paint(
@@ -222,7 +268,6 @@ impl Element for WebView {
         _cx: &mut App,
     ) {
         // Native webview renders itself via the OS compositor.
-        // Nothing to paint into the GPUI scene.
     }
 }
 

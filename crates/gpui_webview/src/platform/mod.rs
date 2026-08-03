@@ -1,5 +1,6 @@
 use gpui::{Bounds, Pixels, SharedString};
 
+#[allow(dead_code)]
 pub(crate) trait PlatformWebView {
     fn set_bounds(&self, bounds: Bounds<Pixels>);
     fn set_visible(&self, visible: bool);
@@ -12,7 +13,7 @@ pub(crate) trait PlatformWebView {
     fn evaluate_javascript(
         &self,
         script: &str,
-        callback: Option<Box<dyn FnOnce(Result<String, String>)>>,
+        callback: Option<Box<dyn FnOnce(Result<String, String>) + Send>>,
     );
     fn title(&self) -> SharedString;
     fn url(&self) -> SharedString;

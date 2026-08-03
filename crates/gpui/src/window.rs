@@ -73,6 +73,11 @@ pub use prompts::*;
 /// Default window size used when no explicit size is provided.
 pub const DEFAULT_WINDOW_SIZE: Size<Pixels> = size(px(1536.), px(1095.));
 
+/// Emit `TRACE` lines for window state changes to stderr.
+/// Enabled by setting the `GPUI_TRACE` environment variable to any value.
+static TRACE: std::sync::LazyLock<bool> =
+    std::sync::LazyLock::new(|| std::env::var_os("GPUI_TRACE").is_some());
+
 /// A 6:5 aspect ratio minimum window size to be used for functional,
 /// additional-to-main-Zed windows, like the settings and rules library windows.
 pub const DEFAULT_ADDITIONAL_WINDOW_SIZE: Size<Pixels> = Size {
@@ -1862,6 +1867,9 @@ impl Window {
     pub fn focus(&mut self, handle: &FocusHandle, cx: &mut App) {
         if !self.focus_enabled || self.focus == Some(handle.id) {
             return;
+        }
+        if *TRACE {
+            eprintln!("TRACE gpui window.focus -> {:?}", handle.id);
         }
 
         self.focus = Some(handle.id);

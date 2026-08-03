@@ -52,7 +52,7 @@ impl WebViewHandle {
     pub fn evaluate_javascript(
         &self,
         script: &str,
-        callback: Option<Box<dyn FnOnce(Result<String, String>)>>,
+        callback: Option<Box<dyn FnOnce(Result<String, String>) + Send>>,
     ) {
         self.inner.evaluate_javascript(script, callback);
     }

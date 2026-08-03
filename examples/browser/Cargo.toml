@@ -1,0 +1,10 @@
+[package]
+name = "browser"
+version = "0.1.0"
+edition = "2024"
+
+[dependencies]
+gpui = { path = "../../crates/gpui/" }
+gpui_platform = { path = "../../crates/gpui_platform/", features = ["wgpu"] }
+gpui_elements = { path = "../../crates/gpui_elements/" }
+gpui_webview = { path = "../../crates/gpui_webview/" }

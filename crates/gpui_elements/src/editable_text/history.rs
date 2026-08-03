@@ -7,6 +7,12 @@ use std::{
 /// Maximum number of history entries to keep.
 pub const MAX_HISTORY_LEN: usize = 1000;
 
+/// Number of history entries stored inline in the stack (before spilling to the heap).
+/// Kept small: [`HistoryEntry`] is ~80 bytes, so a large inline capacity would make
+/// `EditableTextHistory` (and thereby `EditableTextState`) hundreds of kilobytes,
+/// which overflows the stack when constructed in debug builds.
+const INLINE_HISTORY_CAPACITY: usize = 32;
+
 /// Default interval for grouping consecutive edits into a single undo entry.
 pub const DEFAULT_GROUP_INTERVAL: Duration = Duration::from_millis(300);
 
@@ -15,9 +21,9 @@ pub struct EditableTextHistory {
     /// The maximum duration between changes to `content` that can be grouped together as a single entry in the history log.
     grouping_interval: Duration,
     /// Stack of previous states for undo.
-    undo_stack: SmallVec<[HistoryEntry; MAX_HISTORY_LEN]>,
+    undo_stack: SmallVec<[HistoryEntry; INLINE_HISTORY_CAPACITY]>,
     /// Stack of undone states for redo.
-    redo_stack: SmallVec<[HistoryEntry; MAX_HISTORY_LEN]>,
+    redo_stack: SmallVec<[HistoryEntry; INLINE_HISTORY_CAPACITY]>,
 }
 impl Default for EditableTextHistory {
     fn default() -> Self {
@@ -97,7 +103,7 @@ impl EditableTextHistory {
         self.redo_stack.clear();
     }
 
-    fn stack(&self, kind: HistoryKind) -> &SmallVec<[HistoryEntry; MAX_HISTORY_LEN]> {
+    fn stack(&self, kind: HistoryKind) -> &SmallVec<[HistoryEntry; INLINE_HISTORY_CAPACITY]> {
         // NOTE: Could be an internal map
         match kind {
             HistoryKind::Undo => &self.undo_stack,
@@ -105,7 +111,7 @@ impl EditableTextHistory {
         }
     }
 
-    fn stack_mut(&mut self, kind: HistoryKind) -> &mut SmallVec<[HistoryEntry; MAX_HISTORY_LEN]> {
+    fn stack_mut(&mut self, kind: HistoryKind) -> &mut SmallVec<[HistoryEntry; INLINE_HISTORY_CAPACITY]> {
         match kind {
             HistoryKind::Undo => &mut self.undo_stack,
             HistoryKind::Redo => &mut self.redo_stack,

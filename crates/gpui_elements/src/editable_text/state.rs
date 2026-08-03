@@ -834,6 +834,10 @@ impl<'app> EditableTextActionHandler<Context<'app, Self>> for EditableTextState 
 
     fn insert_enter(&mut self, _: &Enter, window: &mut Window, cx: &mut Context<'app, Self>) {
         if !self.layout_data.supports_multiline {
+            // Single-line inputs don't insert newlines, so keep the action
+            // propagating so that app-level handlers (e.g. submitting the
+            // text) can also react to the Enter key.
+            cx.propagate();
             return;
         }
         if !self.layout_data.accepts_input {

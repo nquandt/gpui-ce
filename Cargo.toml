@@ -21,6 +21,7 @@ members = [
   "./crates/gpui_ce_util/",
   "./tooling/perf/",
   "./examples/counter/",
+  "./examples/browser/",
   "./crates/gpui_mobile/",
   "./crates/gpui_webview/",
 ]
