@@ -5,6 +5,8 @@ edition = "2024"
 
 [dependencies]
 gpui = { path = "../../crates/gpui/", package = "gpui-ce" }
-gpui_platform = { path = "../../crates/gpui_platform/", package = "gpui_ce_platform", features = ["wgpu"] }
+gpui_platform = { path = "../../crates/gpui_platform/", package = "gpui_ce_platform", features = [
+  "wgpu",
+] }
 gpui_elements = { path = "../../crates/gpui_elements/", package = "gpui_ce_elements" }
 gpui_webview = { path = "../../crates/gpui_webview/", package = "gpui_ce_webview" }
