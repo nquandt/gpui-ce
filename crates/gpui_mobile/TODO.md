@@ -2,83 +2,108 @@
 
 ## Native `PlatformInputHandler` / IME support for GPUI-drawn text inputs
 
-**Status:** not started. Current workaround: `examples/ios_browser` sidesteps
-this entirely by embedding a real native `UITextField` as a platform view
-(`packages::text_field`) instead of a GPUI-rendered text input.
+**Status (iOS): implemented.** `ios/text_input_view.rs`'s `GPUITextInputView`
+now conforms to `UITextInput` (+ `UIKeyInput` + `UITextInputTraits`), driven
+by `PlatformInputHandler`/`EntityInputHandler` the same way `gpui_macos`'s
+`NSTextInputClient` implementation drives it on macOS. Any `Render`-based
+view built the normal way (`window.handle_input(&focus_handle,
+ElementInputHandler::new(bounds, view), cx)`) now gets real native text
+editing on iOS: system selection/caret placement, IME/marked-text
+composition, keyboard attribute configuration (autocorrect,
+autocapitalization, spellchecking, return-key label), and hardware-keyboard
+input via `pressesBegan:`/`pressesEnded:`. See `examples/ios_text_input` for
+an end-to-end demo built on `gpui_ce_elements`'s `EditableTextState`.
 
-**The gap:** GPUI's real text-input story is `EntityInputHandler` /
-`ElementInputHandler` (see `crates/gpui/src/input.rs`, and the reference
-implementation at `crates/gpui/examples/input.rs`, formerly Zed's editor
-input handling). Any `Render`-based view implements `EntityInputHandler`
-(`text_for_range`, `selected_text_range`, `marked_text_range`,
-`replace_text_in_range`, `replace_and_mark_text_in_range`,
-`bounds_for_range`, `character_index_for_point`, etc.), calls
-`window.handle_input(&focus_handle, ElementInputHandler::new(bounds, view), cx)`
-during paint, and from then on the platform's `PlatformInputHandler`
-(`crates/gpui/src/platform.rs`) is responsible for bridging that to the
-OS's real text-input APIs — on macOS that's `NSTextInputClient`, on iOS it
-would be UIKit's `UITextInput` protocol.
+What's implemented:
 
-`gpui_mobile`'s iOS window (`ios/window.rs`) implements
-`set_input_handler`/`take_input_handler` (just storage — see line ~1443) but
-nothing in the crate ever drives `UITextInput` from it. Instead there's a
-parallel, much more primitive bridge:
+- `GPUITextPosition`/`GPUITextRange` (`UITextPosition`/`UITextRange`
+  subclasses wrapping UTF-16 offsets) and the full `UITextInput` method set:
+  document extents, `textInRange:`/`replaceRange:withText:`, selected/marked
+  text range get+set, `setMarkedText:selectedRange:`/`unmarkText`, position
+  arithmetic (`positionFromPosition:offset:`,
+  `positionFromPosition:inDirection:offset:`, `comparePosition:toPosition:`,
+  `offsetFromPosition:toPosition:`, `positionWithinRange:farthestInDirection:`,
+  `characterRangeByExtendingPosition:inDirection:`), writing-direction
+  no-ops, `firstRectForRange:`/`caretRectForPosition:` (converted from
+  window coordinates into the input view's coordinate space via
+  `convertRect:fromView:`), `closestPositionToPoint:` (+ `withinRange:`),
+  `characterRangeAtPoint:`, `inputDelegate` storage, and a lazily-created
+  `UITextInputStringTokenizer`.
+- `IosWindow::with_input_handler`/`has_real_input_handler`: a take-then-
+  restore accessor (mirroring `gpui_macos`'s `with_input_handler`) so
+  UIKit re-entrancy (e.g. a synchronous `selectedTextRange` query from
+  inside a callback we're already driving) sees "no handler" instead of
+  double-borrowing, and a `cx.update` failure (GPUI mid-update) is already
+  absorbed as `None`/no-op by `PlatformInputHandler`'s own methods.
+- `handle_text_input`/`handle_delete_backward`/`insertText:`: when a real
+  input handler is set, text is routed through it (`replace_text_in_range`);
+  a literal `"\n"` is dispatched as an `enter` `KeyDown` through the input
+  callback first (so keymaps/`on_action` see it) and only inserted as text
+  if not `default_prevented`; backspace computes the current selection and
+  deletes it, or deletes one code unit before the caret — two if the
+  preceding unit is a UTF-16 low surrogate, so a surrogate pair is never
+  split. The legacy global-callback bridge (`crate::dispatch_text_input` +
+  synthetic per-char `KeyDown`) only runs as a fallback when no input
+  handler is set, so `components::material::text_input` and
+  `examples/ios_browser` are unaffected.
+- Hardware keyboards: `pressesBegan:`/`pressesEnded:` on
+  `GPUITextInputView` map `UIPress.key.keyCode`/`.modifierFlags` through
+  `ios/text_input.rs`'s existing HID table. Printable, unmodified keys are
+  forwarded to `super` so UIKit still turns them into `insertText:` (IME/
+  autocorrect keep working); everything else (arrows, enter, escape,
+  backspace, tab, or any key with a modifier) goes through GPUI
+  `KeyDown`/`KeyUp` directly. The `gpui_ios_handle_key_event` FFI entry
+  point keeps working unchanged for hosts that call it directly.
+- `PlatformWindow` mobile hooks: `set_text_input_configuration` maps
+  `TextInputConfiguration` onto `UITextAutocorrectionType`/
+  `UITextAutocapitalizationType`/`UITextSpellCheckingType`/
+  `UITextSmartQuotesType`/`UITextSmartDashesType`/`UIReturnKeyType`, and
+  calls `reloadInputViews` if the view is first responder;
+  `show_soft_keyboard`/`hide_soft_keyboard` and
+  `text_input_state_changed` (`FocusGained`/`FocusLost` → deferred
+  `becomeFirstResponder`/`resignFirstResponder` via
+  `performSelector:withObject:afterDelay:0`, matching the existing
+  re-entrancy-avoidance pattern; `SelectionChanged`/`ContentChanged` →
+  `inputDelegate` `selectionWillChange:`/`selectionDidChange:` and
+  `textWillChange:`/`textDidChange:`); `update_ime_position` now actually
+  repositions the (still transparent, `userInteractionEnabled = NO`) text
+  input view's frame over the focused element's bounds so autocorrect
+  bubbles, the predictive-text bar, and dictation UI are placed correctly.
+- `KeyboardType` (`lib.rs`) is unchanged and still layered on top via
+  `show_keyboard_with_type` for choosing email/URL/number pads, since
+  `TextInputConfiguration` has no keyboard-type field; the chosen type is
+  re-applied on every `becomeFirstResponder`.
+- The legacy `set_text_input_callback`/`dispatch_text_input` mechanism in
+  `lib.rs` is kept (only `set_text_input_callback`, the public entry point,
+  is marked `#[deprecated]` pointing at `EntityInputHandler`) as a fallback
+  for callers that haven't migrated — `components::material::text_input`
+  and `examples/ios_browser`'s native `UITextField` platform view both
+  still work unchanged.
 
-- `GPUITextInputView` (`ios/window.rs`) implements only the minimal
-  `UIKeyInput` protocol (`insertText:`, `deleteBackward`, `hasText`) — no
-  `UITextInput` conformance at all (no marked text / IME composition, no
-  selection ranges reported to the system, no caret/selection rects for
-  the system to draw handles or the input-method candidate UI over).
-- Typed characters flow through a single global callback
-  (`set_text_input_callback`/`dispatch_text_input` in `lib.rs`) as raw
-  strings, or in `PlatformInput::KeyDown` events — not through
-  `EntityInputHandler` at all.
-- This means **any** GPUI-drawn text input on mobile (not just our one URL
-  bar) has no real cursor placement from touch, no drag-to-select, no
-  double-tap word selection, no system selection handles/magnifier loupe,
-  and no IME/marked-text support (predictive text insertion works but
-  composing input like Pinyin/Kana does not). It's "type characters into a
-  string," not "text editing."
+**What remains (iOS):**
 
-**What the real fix looks like:**
-
-1. Make `GPUITextInputView` actually conform to `UITextInput`
-   (`objc2::runtime::AnyProtocol::get(c"UITextInput")`), implementing at
-   minimum: `selectedTextRange` / `setSelectedTextRange:`,
-   `markedTextRange`, `setMarkedText:selectedRange:`, `unmarkText`,
-   `textInRange:`, `replaceRange:withText:`, `positionFromPosition:offset:`,
-   `comparePosition:toPosition:`, `firstRectForRange:` /
-   `caretRectForPosition:`, `closestPositionToPoint:`. These map directly
-   onto `PlatformInputHandler`'s existing methods
-   (`crates/gpui/src/platform.rs`) — this is bridging work, not designing a
-   new API.
-2. Wire `IosWindow::set_input_handler`/`take_input_handler` so that when
-   GPUI focuses a view implementing `EntityInputHandler`, the iOS layer
-   calls those `UITextInput` methods through to the stored
-   `PlatformInputHandler`, the same way `gpui_macos`'s
-   `NSTextInputClient` implementation does today (good reference: whatever
-   macOS platform file implements `NSTextInputClient` — check
-   `crates/gpui_macos/src` for the exact file).
-3. Retire (or keep only as a Android/older-fallback path) the
-   `UIKeyInput`-only bridge and the global `set_text_input_callback` /
-   `dispatch_text_input` mechanism in `lib.rs` once `EntityInputHandler`
-   flows correctly — they were a stopgap.
-4. `crates/gpui/examples/input.rs` is the right end-to-end example to
-   validate against: get that example running unmodified on iOS (it's
-   currently desktop-only) as the acceptance bar.
-5. Do the same investigation for Android (`android/window.rs`) — same gap
-   likely exists via `InputConnection`/`EditorInfo`, which is Android's
-   equivalent of `UITextInput`.
-
-**Why this matters:** once this lands, *every* GPUI text input (search
-bars, forms, chat composers, code editors — anything built the normal
-`Render` + `EntityInputHandler` way) gets real native text editing on
-mobile, not just one hand-rolled native `UITextField` per screen. The
-`packages::text_field` native-`UITextField` embedding
-(`packages/text_field/`, `ios/platform_view.rs`'s `"text_field"` platform
-view type) can stay as a lighter-weight option for simple single-line
-inputs even after this lands, but shouldn't be the *only* way to get
-working text selection.
+- System selection handles / magnifier loupe via `UITextInteraction` —
+  `selectionRectsForRange:` currently returns an empty array, so UIKit
+  cannot draw its own handles or the loupe; drag-to-select from the
+  system's own gesture recognizers doesn't work as a result (selection can
+  still be set programmatically via `setSelectedTextRange:` / read via
+  `selectedTextRange`, and predictive text / autocorrect / IME composition
+  do work).
+- Drag-to-select through GPUI's own touch state machine: `handle_touches`
+  (`ios/window.rs`) defers `MouseDown` until finger-up to disambiguate taps
+  from scroll gestures (see `TouchState`); a real press-and-drag text
+  selection gesture needs that state machine to recognize "long-press or
+  drag starting inside a focused text element" as a distinct case that
+  begins immediately rather than waiting for lift-off.
+- `positionFromPosition:inDirection:offset:`'s up/down directions are
+  no-ops (no line-layout information is available at this layer) — vertical
+  cursor movement from the system tokenizer/extension gestures won't move
+  lines; horizontal movement and extension work.
+- `crates/gpui/examples/input.rs` still hasn't been ported to run
+  unmodified on iOS as an end-to-end acceptance test; `examples/ios_text_input`
+  (built on `gpui_ce_elements::EditableTextState`) is the current stand-in.
+- Android: `android/window.rs`'s `InputConnection`/`EditorInfo` equivalent
+  of this work has not been investigated or started.
 
 ## Other known gaps (lower priority, noted in code)
 
