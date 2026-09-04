@@ -33,6 +33,10 @@ impl PlatformWebView for StubWebView {
     }
     fn set_devtools_enabled(&self, _: bool) {}
     fn focus(&self) {}
+    fn set_navigation_handler(&self, _: Option<Box<dyn FnMut(&str) -> bool>>) {}
+    fn as_any(&self) -> &dyn std::any::Any {
+        self
+    }
 }
 
 pub(crate) fn create_platform_webview(

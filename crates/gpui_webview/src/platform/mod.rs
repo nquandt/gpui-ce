@@ -19,6 +19,15 @@ pub(crate) trait PlatformWebView {
     fn url(&self) -> SharedString;
     fn set_devtools_enabled(&self, enabled: bool);
     fn focus(&self);
+    /// Replace the navigation-interception callback. Called every prepaint
+    /// with the latest closure from `WebView::on_navigation`, so the native
+    /// handler (registered once at webview creation) always calls through to
+    /// the current frame's callback.
+    fn set_navigation_handler(&self, handler: Option<Box<dyn FnMut(&str) -> bool>>);
+    /// Downcast escape hatch so `WebViewHandle::native()` can reach the
+    /// concrete backend (e.g. `wry::WebView`) for APIs this crate doesn't
+    /// wrap yet.
+    fn as_any(&self) -> &dyn std::any::Any;
 }
 
 #[cfg(feature = "webview")]

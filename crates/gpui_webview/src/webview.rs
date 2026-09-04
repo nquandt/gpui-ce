@@ -17,6 +17,9 @@ pub(crate) struct WebViewConfig {
     pub zoom: f32,
     pub bounds: Bounds<Pixels>,
     pub initial_title: Option<SharedString>,
+    /// Scripts evaluated before page scripts run, on every navigation. See
+    /// `WebView::init_script`.
+    pub init_scripts: Vec<String>,
 }
 
 impl Default for WebViewConfig {
@@ -29,6 +32,7 @@ impl Default for WebViewConfig {
             zoom: 1.0,
             bounds: Bounds::default(),
             initial_title: None,
+            init_scripts: Vec::new(),
         }
     }
 }
@@ -110,6 +114,15 @@ impl WebView {
     /// Set zoom factor.
     pub fn zoom(mut self, factor: f32) -> Self {
         self.config.zoom = factor;
+        self
+    }
+
+    /// Add a script evaluated before any page script runs, on every
+    /// navigation. Call multiple times to add several scripts; they run in
+    /// the order added. Useful for polyfills, analytics shims, or a
+    /// consumer-defined preload API.
+    pub fn init_script(mut self, script: impl Into<String>) -> Self {
+        self.config.init_scripts.push(script.into());
         self
     }
 
@@ -226,6 +239,15 @@ impl Element for WebView {
 
                 let handle = WebViewHandle::new(webview_state.platform_webview.clone());
 
+                // The native navigation handler is registered once at webview
+                // creation (see `wry_backend::WryWebView::new`), but `self`
+                // (and its `on_navigation` closure) is rebuilt every frame,
+                // so refresh the callback the handler reads through each
+                // prepaint.
+                webview_state
+                    .platform_webview
+                    .set_navigation_handler(self.on_navigation.take());
+
                 // Detect main-frame URL changes (e.g. internal navigation) and
                 // notify observers. `url()` reports the top-level document URL,
                 // so sub-frame navigations don't trigger spurious updates.
@@ -250,6 +272,11 @@ impl Element for WebView {
                 if is_first_creation && let Some(ref mut callback) = self.on_create_handle {
                     callback(handle.clone(), window, cx);
                 }
+
+                // NOTE(ipc): a future IPC bridge would drain queued messages
+                // from the platform webview here (each prepaint, same as the
+                // URL-change poll above) and dispatch them to a consumer
+                // `on_ipc_message` callback, replying through `handle`.
 
                 (Some(handle), Some(webview_state))
             },
