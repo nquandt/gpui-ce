@@ -60,7 +60,6 @@ impl WryWebView {
         // borrow the app re-entrantly from inside a WebView2 event callback.
         let app = cx.to_async();
         builder = builder.with_on_page_load_handler({
-            let app = app.clone();
             move |event, url| {
                 if std::env::var_os("GPUI_TRACE").is_some() {
                     let ms = std::time::SystemTime::now()

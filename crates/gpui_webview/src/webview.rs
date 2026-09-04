@@ -234,22 +234,21 @@ impl Element for WebView {
                     let changed_url = current_url.clone();
                     webview_state.last_known_url = current_url;
                     // Ignore the transient blank state right after creation.
-                    if !changed_url.is_empty() && changed_url != "about:blank" {
-                        if let Some(ref mut callback) = self.on_url_changed {
-                            callback(&changed_url, window, cx);
-                            // Callbacks fired from prepaint run mid-draw, where
-                            // entity-change notifications can't schedule a
-                            // redraw, so request one explicitly.
-                            window.defer(cx, |window, _cx| window.refresh());
-                        }
+                    if !changed_url.is_empty()
+                        && changed_url != "about:blank"
+                        && let Some(ref mut callback) = self.on_url_changed
+                    {
+                        callback(&changed_url, window, cx);
+                        // Callbacks fired from prepaint run mid-draw, where
+                        // entity-change notifications can't schedule a
+                        // redraw, so request one explicitly.
+                        window.defer(cx, |window, _cx| window.refresh());
                     }
                 }
 
                 // Fire the on_create_handle callback on first creation
-                if is_first_creation {
-                    if let Some(ref mut callback) = self.on_create_handle {
-                        callback(handle.clone(), window, cx);
-                    }
+                if is_first_creation && let Some(ref mut callback) = self.on_create_handle {
+                    callback(handle.clone(), window, cx);
                 }
 
                 (Some(handle), Some(webview_state))

@@ -79,7 +79,7 @@ impl Render for Browser {
         // changes back into the text box once it detects internal navigation.
         let url_state_for_webview = url_state.downgrade();
 
-        let root = div()
+        div()
             .flex()
             .flex_col()
             .size_full()
@@ -147,9 +147,7 @@ impl Render for Browser {
                         *handle_cell.borrow_mut() = Some(handle);
                     })
                     .flex_1(),
-            );
-
-        root
+            )
     }
 }
 

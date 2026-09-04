@@ -2783,7 +2783,6 @@ mod tests {
         assert_eq!(path.extension_or_hidden_file_name(), Some("eslintrc.js"));
     }
 
-    #[test]
     // fn edge_of_glob() {
     //     let path = Path::new("/work/node_modules");
     //     let path_matcher =
@@ -3322,14 +3321,14 @@ mod tests {
     fn test_wsl_path() {
         use super::WslPath;
         let path = "/a/b/c";
-        assert_eq!(WslPath::from_path(&path), None);
+        assert_eq!(WslPath::from_path(path), None);
 
         let path = r"\\wsl.localhost";
-        assert_eq!(WslPath::from_path(&path), None);
+        assert_eq!(WslPath::from_path(path), None);
 
         let path = r"\\wsl.localhost\Distro";
         assert_eq!(
-            WslPath::from_path(&path),
+            WslPath::from_path(path),
             Some(WslPath {
                 distro: "Distro".to_owned(),
                 path: "/".into(),
@@ -3338,7 +3337,7 @@ mod tests {
 
         let path = r"\\wsl.localhost\Distro\blue";
         assert_eq!(
-            WslPath::from_path(&path),
+            WslPath::from_path(path),
             Some(WslPath {
                 distro: "Distro".to_owned(),
                 path: "/blue".into()
@@ -3347,7 +3346,7 @@ mod tests {
 
         let path = r"\\wsl$\archlinux\tomato\.\paprika\..\aubergine.txt";
         assert_eq!(
-            WslPath::from_path(&path),
+            WslPath::from_path(path),
             Some(WslPath {
                 distro: "archlinux".to_owned(),
                 path: "/tomato/paprika/../aubergine.txt".into()
@@ -3355,7 +3354,7 @@ mod tests {
         );
 
         let path = r"\\windows.localhost\Distro\foo";
-        assert_eq!(WslPath::from_path(&path), None);
+        assert_eq!(WslPath::from_path(path), None);
     }
 
     #[test]

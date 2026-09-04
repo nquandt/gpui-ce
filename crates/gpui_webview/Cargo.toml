@@ -3,6 +3,9 @@ name = "gpui_webview"
 version = "0.1.0"
 edition = "2024"
 
+[lints]
+workspace = true
+
 [features]
 default = ["webview"]
 webview = ["dep:wry"]
