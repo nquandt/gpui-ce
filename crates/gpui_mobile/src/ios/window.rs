@@ -120,6 +120,58 @@ fn register_view_controller_class() -> &'static AnyClass {
             }
         }
 
+        // Override viewSafeAreaInsetsDidChange — called whenever the safe
+        // area changes independently of a full layout pass (e.g. a
+        // floating/undocked external-keyboard toolbar). Reuses
+        // `handle_layout_change`'s bounds/insets recomputation, which is a
+        // cheap no-op when nothing has actually changed.
+        extern "C" fn view_safe_area_insets_did_change(this: *mut AnyObject, _sel: Sel) {
+            unsafe {
+                let superclass = class!(UIViewController);
+                let _: () = msg_send![super(this, superclass), viewSafeAreaInsetsDidChange];
+            }
+
+            if let Some(wrapper) = super::ffi::IOS_WINDOW_LIST.get() {
+                unsafe {
+                    let windows = &*wrapper.0.get();
+                    for &window_ptr in windows.iter() {
+                        if !window_ptr.is_null() {
+                            let window = &*window_ptr;
+                            window.handle_layout_change();
+                            window.notify_insets_changed();
+                        }
+                    }
+                }
+            }
+        }
+
+        // Override traitCollectionDidChange: — fires for any trait change
+        // (size class, display scale, user interface style/appearance...).
+        // We only care about light/dark appearance here; `IosWindow`
+        // de-duplicates against unrelated trait changes.
+        extern "C" fn trait_collection_did_change(
+            this: *mut AnyObject,
+            _sel: Sel,
+            previous: *mut AnyObject,
+        ) {
+            unsafe {
+                let superclass = class!(UIViewController);
+                let _: () = msg_send![super(this, superclass), traitCollectionDidChange: previous];
+            }
+
+            if let Some(wrapper) = super::ffi::IOS_WINDOW_LIST.get() {
+                unsafe {
+                    let windows = &*wrapper.0.get();
+                    for &window_ptr in windows.iter() {
+                        if !window_ptr.is_null() {
+                            let window = &*window_ptr;
+                            window.notify_appearance_changed_if_needed();
+                        }
+                    }
+                }
+            }
+        }
+
         unsafe {
             decl.add_method(
                 sel!(preferredStatusBarStyle),
@@ -128,6 +180,14 @@ fn register_view_controller_class() -> &'static AnyClass {
             decl.add_method(
                 sel!(viewDidLayoutSubviews),
                 view_did_layout_subviews as extern "C" fn(*mut AnyObject, Sel),
+            );
+            decl.add_method(
+                sel!(viewSafeAreaInsetsDidChange),
+                view_safe_area_insets_did_change as extern "C" fn(*mut AnyObject, Sel),
+            );
+            decl.add_method(
+                sel!(traitCollectionDidChange:),
+                trait_collection_did_change as extern "C" fn(*mut AnyObject, Sel, *mut AnyObject),
             );
         }
 
@@ -514,6 +574,64 @@ pub(crate) struct IosWindow {
     /// `request_frame` callback) can acquire a mutable reference without
     /// conflicting with the outer `&self` borrow.
     renderer: Mutex<Option<WgpuRenderer>>,
+    /// Callback invoked whenever [`PlatformWindow::insets`] changes — either
+    /// exactly (safe-area/layout changes) or on every frame while a keyboard
+    /// show/hide animation is interpolating (see `pump_insets_animation`).
+    insets_changed_callback: RefCell<Option<Box<dyn FnMut(gpui::WindowInsets)>>>,
+    /// In-flight keyboard inset animation, advanced once per frame from
+    /// `pump_insets_animation`. `None` when at rest.
+    keyboard_animation: Cell<Option<KeyboardAnimation>>,
+    /// The current (settled) keyboard/IME inset in logical points, i.e. the
+    /// value the animation above is animating *towards*, and the value
+    /// reported once it settles.
+    ime_inset_bottom: Cell<f32>,
+    /// The appearance last reported via `on_appearance_changed`, so
+    /// `GPUIViewController`'s `traitCollectionDidChange:` override (which
+    /// fires for any trait change, not just dark/light) can suppress
+    /// duplicate callbacks.
+    last_appearance: Cell<WindowAppearance>,
+}
+
+/// Tracks an in-flight keyboard show/hide inset animation.
+///
+/// iOS reports the keyboard's animation curve/duration via
+/// `UIKeyboardWillShow/HideNotification`'s `userInfo`, but delivers it as a
+/// single instantaneous notification rather than a stream of frame updates
+/// the way Android's `WindowInsetsAnimation` callback does. To honor
+/// [`PlatformWindow::on_insets_changed`]'s contract ("fires continuously
+/// during animated transitions... on iOS the platform interpolates the
+/// keyboard animation curve on frame ticks"), we linearly interpolate
+/// between the pre- and post-animation inset ourselves, driven by
+/// `pump_insets_animation` on every `CADisplayLink` tick.
+///
+/// The interpolation is linear rather than matching UIKit's actual curve
+/// (typically an ease-in-out) because `UIKeyboardAnimationCurveUserInfoKey`
+/// reports a raw `UIViewAnimationCurve` enum value, not reusable easing
+/// coefficients, and iOS 18 deprecated the API needed to convert it into a
+/// `UIView` animation block we could sample. Linear interpolation over the
+/// correct duration is a reasonable approximation and, crucially, always
+/// reaches the exact end value.
+#[derive(Clone, Copy, Debug)]
+struct KeyboardAnimation {
+    start_bottom: f32,
+    end_bottom: f32,
+    started_at: std::time::Instant,
+    duration: std::time::Duration,
+}
+
+impl KeyboardAnimation {
+    /// Returns the interpolated inset for "now", and whether the animation
+    /// has finished (in which case the returned value is exactly `end_bottom`).
+    fn sample(&self) -> (f32, bool) {
+        let elapsed = self.started_at.elapsed();
+        if elapsed >= self.duration || self.duration.is_zero() {
+            (self.end_bottom, true)
+        } else {
+            let t = elapsed.as_secs_f32() / self.duration.as_secs_f32();
+            let value = self.start_bottom + (self.end_bottom - self.start_bottom) * t;
+            (value, false)
+        }
+    }
 }
 
 // Required for raw_window_handle
@@ -610,6 +728,10 @@ impl IosWindow {
                 velocity_tracker: RefCell::new(VelocityTracker::new()),
                 momentum_scroller: RefCell::new(MomentumScroller::new()),
                 renderer: Mutex::new(None),
+                insets_changed_callback: RefCell::new(None),
+                keyboard_animation: Cell::new(None),
+                ime_inset_bottom: Cell::new(0.0),
+                last_appearance: Cell::new(WindowAppearance::Light),
             };
 
             // Create the wgpu renderer using the Metal backend.
@@ -733,8 +855,35 @@ impl IosWindow {
             let show_name = crate::ios::util::nsstring("UIKeyboardWillShowNotification");
             let hide_name = crate::ios::util::nsstring("UIKeyboardWillHideNotification");
 
-            // Block that fires when the keyboard appears — extracts the
-            // end-frame height and stores it in the global atomic.
+            // Captured as a `usize` (not a typed pointer) purely so the
+            // `'static` block2 closures below don't need `Send`/`Sync`
+            // impls for `*const Self` — it's only ever dereferenced back on
+            // the main thread, same as every other pointer in this module.
+            let window_ptr = self as *const Self as usize;
+
+            // Extracts the animation duration from a keyboard notification's
+            // userInfo, defaulting to UIKit's standard 0.25s if absent.
+            unsafe fn animation_duration_secs(user_info: *mut AnyObject) -> f64 {
+                unsafe {
+                    if user_info.is_null() {
+                        return 0.25;
+                    }
+                    let duration_key =
+                        crate::ios::util::nsstring("UIKeyboardAnimationDurationUserInfoKey");
+                    let duration_value: *mut AnyObject =
+                        msg_send![user_info, objectForKey: duration_key];
+                    if duration_value.is_null() {
+                        0.25
+                    } else {
+                        msg_send![duration_value, doubleValue]
+                    }
+                }
+            }
+
+            // Block that fires when the keyboard is about to appear —
+            // extracts the end-frame height and the animation duration, and
+            // kicks off an interpolated inset animation on the window that
+            // registered this observer.
             let show_block = block2::RcBlock::new(move |notification: *mut AnyObject| {
                 if notification.is_null() {
                     return;
@@ -752,13 +901,32 @@ impl IosWindow {
                 }
                 let frame: ObjcCGRect = msg_send![frame_value, CGRectValue];
                 let height = frame.height as f32;
-                log::info!("GPUI iOS: Keyboard will show, height={}", height);
+                let duration = animation_duration_secs(user_info);
+
+                log::info!(
+                    "GPUI iOS: Keyboard will show, height={}, duration={:.3}s",
+                    height,
+                    duration
+                );
                 crate::set_keyboard_height(height);
+
+                let window = &*(window_ptr as *const Self);
+                window.start_keyboard_inset_animation(height, duration);
             });
 
-            let hide_block = block2::RcBlock::new(move |_notification: *mut AnyObject| {
+            let hide_block = block2::RcBlock::new(move |notification: *mut AnyObject| {
                 log::info!("GPUI iOS: Keyboard will hide");
                 crate::set_keyboard_height(0.0);
+
+                let user_info: *mut AnyObject = if notification.is_null() {
+                    std::ptr::null_mut()
+                } else {
+                    msg_send![notification, userInfo]
+                };
+                let duration = animation_duration_secs(user_info);
+
+                let window = &*(window_ptr as *const Self);
+                window.start_keyboard_inset_animation(0.0, duration);
             });
 
             let _: *mut AnyObject = msg_send![notification_center,
@@ -778,6 +946,98 @@ impl IosWindow {
             // Leak the blocks so they live for the app lifetime.
             std::mem::forget(show_block);
             std::mem::forget(hide_block);
+        }
+    }
+
+    /// Computes the current [`gpui::WindowInsets`] from the live safe-area
+    /// insets plus the settled (not mid-animation) IME inset. Used both by
+    /// [`PlatformWindow::insets`] and to report the *final*, exact value
+    /// once a keyboard animation completes.
+    fn compute_settled_insets(&self) -> gpui::WindowInsets {
+        let (top, bottom, left, right) = self.safe_area_insets();
+        gpui::WindowInsets {
+            safe_area: gpui::Edges {
+                top: px(top),
+                bottom: px(bottom),
+                left: px(left),
+                right: px(right),
+            },
+            ime: gpui::Edges {
+                top: px(0.),
+                bottom: px(self.ime_inset_bottom.get()),
+                left: px(0.),
+                right: px(0.),
+            },
+        }
+    }
+
+    /// Starts (or retargets) the keyboard inset animation towards
+    /// `end_bottom` over `duration_secs`. If `duration_secs` is ~0 (some
+    /// devices report a zero duration for an already-visible keyboard
+    /// changing type), the inset is applied immediately instead.
+    fn start_keyboard_inset_animation(&self, end_bottom: f32, duration_secs: f64) {
+        let start_bottom = self
+            .keyboard_animation
+            .get()
+            .map(|anim| anim.sample().0)
+            .unwrap_or_else(|| self.ime_inset_bottom.get());
+
+        if duration_secs <= 0.001 {
+            self.keyboard_animation.set(None);
+            self.ime_inset_bottom.set(end_bottom);
+            self.notify_insets_changed();
+            return;
+        }
+
+        self.keyboard_animation.set(Some(KeyboardAnimation {
+            start_bottom,
+            end_bottom,
+            started_at: std::time::Instant::now(),
+            duration: std::time::Duration::from_secs_f64(duration_secs),
+        }));
+    }
+
+    /// Advances the in-flight keyboard inset animation by one frame,
+    /// firing `on_insets_changed` with the interpolated value. Called from
+    /// `gpui_ios_request_frame` on every `CADisplayLink` tick, alongside
+    /// `pump_momentum`. A no-op when no animation is in flight.
+    pub(crate) fn pump_insets_animation(&self) {
+        let Some(animation) = self.keyboard_animation.get() else {
+            return;
+        };
+        let (value, finished) = animation.sample();
+        self.ime_inset_bottom.set(value);
+        if finished {
+            self.keyboard_animation.set(None);
+        }
+        self.notify_insets_changed();
+    }
+
+    /// Fires the `on_insets_changed` callback with the current insets, if a
+    /// callback is registered. Intersects the IME inset against the window's
+    /// own bounds implicitly (via `ime_inset_bottom`, which is only ever set
+    /// from `UIKeyboardWillShow/HideNotification` frames that UIKit already
+    /// clips to the screen) — an external or floating/undocked iPad keyboard
+    /// reports a frame outside the window's bounds and UIKit's notification
+    /// height for those is 0, so no special-casing is needed here.
+    pub(crate) fn notify_insets_changed(&self) {
+        let insets = self.compute_settled_insets();
+        if let Some(callback) = self.insets_changed_callback.borrow_mut().as_mut() {
+            callback(insets);
+        }
+    }
+
+    /// Fires `on_appearance_changed` if the current appearance differs from
+    /// the last one reported. Called from `traitCollectionDidChange:`,
+    /// which fires for *any* trait change (size class, scale, etc.), not
+    /// just light/dark mode.
+    pub(crate) fn notify_appearance_changed_if_needed(&self) {
+        let current = PlatformWindow::appearance(self);
+        if current != self.last_appearance.get() {
+            self.last_appearance.set(current);
+            if let Some(callback) = self.appearance_changed_callback.borrow_mut().as_mut() {
+                callback();
+            }
         }
     }
 
@@ -1300,6 +1560,12 @@ impl IosWindow {
     /// Queries the current UIView bounds, updates the stored bounds/scale,
     /// reconfigures the Metal layer + wgpu surface, and fires the resize callback.
     pub fn handle_layout_change(&self) {
+        // Safe-area insets can change independently of bounds/scale (e.g. a
+        // rotation that doesn't change the notch's logical side, or a
+        // split-view resize) — recompute and notify unconditionally, ahead
+        // of the bounds/scale early-return below.
+        self.notify_insets_changed();
+
         unsafe {
             let view_bounds: ObjcCGRect = msg_send![self.view, bounds];
             let screen: *mut AnyObject = msg_send![class!(UIScreen), mainScreen];
@@ -1450,25 +1716,32 @@ impl PlatformWindow for IosWindow {
 
     fn prompt(
         &self,
-        _level: PromptLevel,
+        level: PromptLevel,
         msg: &str,
         detail: Option<&str>,
         answers: &[PromptButton],
     ) -> Option<futures::channel::oneshot::Receiver<usize>> {
-        // Would use UIAlertController
-        let (_tx, rx) = futures::channel::oneshot::channel();
+        let (tx, rx) = futures::channel::oneshot::channel();
 
         unsafe {
-            // Create UIAlertController
             let title = msg;
             let message = detail.unwrap_or("");
 
-            let alert_style: i64 = 1; // UIAlertControllerStyleAlert
+            // UIAlertControllerStyleAlert. `Critical` gets the same style —
+            // iOS has no distinct "critical" alert chrome — but we still
+            // prefix the title so the distinction isn't lost entirely.
+            let alert_style: i64 = 1;
+            let title = match level {
+                PromptLevel::Critical => format!("⚠️ {title}"),
+                PromptLevel::Warning | PromptLevel::Info => title.to_string(),
+            };
 
-            let title_str: *mut AnyObject =
-                msg_send![class!(NSString), stringWithUTF8String: title.as_ptr()];
-            let message_str: *mut AnyObject =
-                msg_send![class!(NSString), stringWithUTF8String: message.as_ptr()];
+            // NUL-safe: `nsstring` copies exactly `s.len()` bytes rather
+            // than scanning for a NUL terminator the way
+            // `stringWithUTF8String:` does on a non-NUL-terminated `&str`
+            // pointer (undefined behavior the previous implementation had).
+            let title_str = crate::ios::util::nsstring(&title);
+            let message_str = crate::ios::util::nsstring(message);
 
             let alert: *mut AnyObject = msg_send![
                 class!(UIAlertController),
@@ -1477,24 +1750,41 @@ impl PlatformWindow for IosWindow {
                 preferredStyle: alert_style
             ];
 
-            // Add buttons
-            for button in answers.iter() {
-                let button_title: *mut AnyObject = msg_send![
-                    class!(NSString),
-                    stringWithUTF8String: button.label().as_str().as_ptr()
-                ];
+            // Shared across every button's handler block: whichever fires
+            // first takes the sender and resolves it; `Rc<RefCell<Option<_>>>`
+            // rather than a plain `oneshot::Sender` because `UIAlertAction`
+            // handler blocks are `Fn`, not `FnOnce`, and UIKit only ever
+            // invokes exactly one of them per alert.
+            let sender: Rc<RefCell<Option<futures::channel::oneshot::Sender<usize>>>> =
+                Rc::new(RefCell::new(Some(tx)));
 
-                let action_style: i64 = if button.is_cancel() { 1 } else { 0 }; // UIAlertActionStyleCancel or Default
+            for (index, button) in answers.iter().enumerate() {
+                let button_title = crate::ios::util::nsstring(button.label().as_ref());
 
-                // Note: In production, this would need a block that calls tx.send(index)
+                // UIAlertActionStyleCancel = 1, UIAlertActionStyleDefault = 0.
+                let action_style: i64 = if button.is_cancel() { 1 } else { 0 };
+
+                let sender_for_action = sender.clone();
+                let handler = block2::RcBlock::new(move |_action: *mut AnyObject| {
+                    if let Some(sender) = sender_for_action.borrow_mut().take() {
+                        let _ = sender.send(index);
+                    }
+                });
+
                 let action: *mut AnyObject = msg_send![
                     class!(UIAlertAction),
                     actionWithTitle: button_title,
                     style: action_style,
-                    handler: ptr::null::<AnyObject>()
+                    handler: &*handler
                 ];
 
                 let _: () = msg_send![alert, addAction: action];
+
+                // Leak the handler block: `UIAlertAction` retains it for its
+                // own lifetime (bounded by the alert, which UIKit owns once
+                // presented), but we have no Rust-side owner to keep it
+                // alive until then otherwise.
+                std::mem::forget(handler);
             }
 
             // Present the alert
@@ -1631,6 +1921,29 @@ impl PlatformWindow for IosWindow {
 
     fn update_ime_position(&self, _bounds: Bounds<Pixels>) {
         // iOS handles IME positioning automatically
+    }
+
+    fn insets(&self) -> gpui::WindowInsets {
+        self.compute_settled_insets()
+    }
+
+    fn on_insets_changed(&self, callback: Box<dyn FnMut(gpui::WindowInsets)>) {
+        *self.insets_changed_callback.borrow_mut() = Some(callback);
+        // Fire immediately with the current value so callers that only
+        // register a callback (and never separately call `insets()`) still
+        // get the current state rather than waiting for the next change.
+        self.notify_insets_changed();
+    }
+
+    fn request_attention(&self) {
+        // iOS has no window-attention affordance for a foreground app (no
+        // Dock bounce equivalent); the closest analogue is a local
+        // notification, which would require notification authorization the
+        // app may not have requested. If the app is backgrounded, posting a
+        // notification is the right tool and belongs in
+        // `Platform::show_system_notification`, which callers can already
+        // reach directly — so this is a deliberate no-op rather than a
+        // surprising side effect.
     }
 }
 

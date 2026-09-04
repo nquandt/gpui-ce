@@ -12,7 +12,7 @@
 //! gpui_ios_request_frame(ptr)  // called every CADisplayLink tick
 //! ```
 
-use gpui::{App, AppContext, Application, RequestFrameOptions, WindowOptions};
+use gpui::{App, AppContext, AppLifecyclePhase, Application, RequestFrameOptions, WindowOptions};
 use std::ffi::c_void;
 use std::rc::Rc;
 use std::sync::OnceLock;
@@ -159,6 +159,8 @@ pub extern "C" fn gpui_ios_did_finish_launching(_app_ptr: *mut c_void) {
 pub extern "C" fn gpui_ios_will_enter_foreground(_app_ptr: *mut c_void) {
     log::info!("GPUI iOS: Will enter foreground");
 
+    super::platform::notify_app_lifecycle(AppLifecyclePhase::Foreground);
+
     // Notify all windows that they're becoming active
     if let Some(wrapper) = IOS_WINDOW_LIST.get() {
         unsafe {
@@ -180,6 +182,8 @@ pub extern "C" fn gpui_ios_will_enter_foreground(_app_ptr: *mut c_void) {
 #[unsafe(no_mangle)]
 pub extern "C" fn gpui_ios_did_become_active(_app_ptr: *mut c_void) {
     log::info!("GPUI iOS: Did become active");
+
+    super::platform::notify_app_lifecycle(AppLifecyclePhase::Active);
 
     // App is now fully active - windows should be notified
     if let Some(wrapper) = IOS_WINDOW_LIST.get() {
@@ -203,6 +207,8 @@ pub extern "C" fn gpui_ios_did_become_active(_app_ptr: *mut c_void) {
 pub extern "C" fn gpui_ios_will_resign_active(_app_ptr: *mut c_void) {
     log::info!("GPUI iOS: Will resign active");
 
+    super::platform::notify_app_lifecycle(AppLifecyclePhase::Inactive);
+
     // App is about to become inactive
     if let Some(wrapper) = IOS_WINDOW_LIST.get() {
         unsafe {
@@ -225,6 +231,8 @@ pub extern "C" fn gpui_ios_will_resign_active(_app_ptr: *mut c_void) {
 #[unsafe(no_mangle)]
 pub extern "C" fn gpui_ios_did_enter_background(_app_ptr: *mut c_void) {
     log::info!("GPUI iOS: Did enter background");
+
+    super::platform::notify_app_lifecycle(AppLifecyclePhase::Background);
 
     // Notify windows they're no longer visible
     if let Some(wrapper) = IOS_WINDOW_LIST.get() {
@@ -295,6 +303,12 @@ pub extern "C" fn gpui_ios_request_frame(window_ptr: *mut c_void) {
     // layout/paint cycle.  This produces the smooth, decelerating inertia
     // scroll that users expect on iOS after a fling gesture.
     window.pump_momentum();
+
+    // ── Insets animation ─────────────────────────────────────────────────
+    // Interpolates `WindowInsets::ime` across the keyboard's show/hide
+    // animation curve, firing `on_insets_changed` on every frame until the
+    // animation settles (see `IosWindow::pump_insets_animation`).
+    window.pump_insets_animation();
 
     // Check if text input arrived since last frame — if so, force a render
     // so drain_pending_text() runs and the UI updates.
@@ -419,7 +433,12 @@ pub extern "C" fn gpui_ios_handle_open_url(url_ptr: *mut c_void) {
 
     #[cfg(feature = "deeplink")]
     {
+        super::platform::notify_open_urls(vec![url_string.clone()]);
         crate::packages::deeplink::ios::handle_open_url(url_string);
+    }
+    #[cfg(not(feature = "deeplink"))]
+    {
+        super::platform::notify_open_urls(vec![url_string]);
     }
 }
 
