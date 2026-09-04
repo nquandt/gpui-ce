@@ -24,6 +24,7 @@ members = [
   "./crates/gpui_webview/",
   "./tooling/perf/",
   "./crates/gpui_mobile/",
+  "./examples/ios_counter/",
 ]
 default-members = ["./crates/gpui/"]
 resolver = "3"

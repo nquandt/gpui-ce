@@ -1,0 +1,49 @@
+name: GPUICounter
+options:
+  bundleIdPrefix: dev.gpui-ce.examples
+  deploymentTarget:
+    iOS: "17.0"
+
+targets:
+  GPUICounter:
+    type: application
+    platform: iOS
+    sources:
+      - path: AppDelegate.swift
+    info:
+      path: Info.plist
+      properties:
+        UILaunchScreen: {}
+    settings:
+      base:
+        PRODUCT_BUNDLE_IDENTIFIER: com.gpuice.ioscounter
+        CODE_SIGN_STYLE: Automatic
+        DEVELOPMENT_TEAM: 9VDA767NN2
+        CODE_SIGN_IDENTITY: Apple Development
+        SWIFT_OBJC_BRIDGING_HEADER: Bridging/GPUIBridge.h
+        HEADER_SEARCH_PATHS: "$(SRCROOT)/Bridging"
+        "LIBRARY_SEARCH_PATHS[sdk=iphonesimulator*]": "$(SRCROOT)/../../../target/aarch64-apple-ios-sim/debug"
+        "LIBRARY_SEARCH_PATHS[sdk=iphoneos*]": "$(SRCROOT)/../../../target/aarch64-apple-ios/debug"
+        OTHER_LDFLAGS:
+          - "-lios_counter"
+          - "-framework"
+          - "UIKit"
+          - "-framework"
+          - "Metal"
+          - "-framework"
+          - "MetalKit"
+          - "-framework"
+          - "QuartzCore"
+          - "-framework"
+          - "CoreGraphics"
+          - "-framework"
+          - "CoreText"
+          - "-framework"
+          - "CoreFoundation"
+          - "-framework"
+          - "AVFoundation"
+          - "-framework"
+          - "CoreMedia"
+          - "-lc++"
+        ENABLE_BITCODE: NO
+    scheme: {}

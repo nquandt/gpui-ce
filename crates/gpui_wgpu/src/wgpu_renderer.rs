@@ -374,8 +374,12 @@ impl WgpuRenderer {
             .map_err(|e| anyhow::anyhow!("Failed to get window handle: {e}"))?;
 
         let target = wgpu::SurfaceTargetUnsafe::RawHandle {
-            // Fall back to the display handle already provided via InstanceDescriptor::display.
-            raw_display_handle: None,
+            // wgpu's `Instance::create_surface` hard-errors with `MissingDisplayHandle`
+            // when both `InstanceDescriptor::display` and this field are `None` — this
+            // is not backend-specific (see wgpu-core `instance.rs`'s `(None, None) =>
+            // MissingDisplayHandle` branch), so we must supply the window's own display
+            // handle here rather than always relying on the instance-level fallback.
+            raw_display_handle: window.display_handle().ok().map(|h| h.as_raw()),
             raw_window_handle: window_handle.as_raw(),
         };
 

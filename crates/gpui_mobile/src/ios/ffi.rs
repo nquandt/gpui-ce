@@ -489,8 +489,24 @@ pub fn run_app() {
         let _ = IOS_WINDOW_LIST.set(WindowListWrapper(std::cell::UnsafeCell::new(Vec::new())));
     }
 
+    // `Application::run` only keeps the app's `Rc<AppCell>` alive via the
+    // finish-launching closure's captures; once that closure returns (which
+    // happens synchronously below, since iOS can't block the run loop like
+    // desktop platforms do) it would normally be dropped, freeing the app
+    // while windows/callbacks still hold weak references into it — causing
+    // a use-after-free the next time e.g. CADisplayLink fires a frame.
+    //
+    // `Application::run_embedded` exists exactly for this "external run loop"
+    // shape: it returns an `ApplicationHandle` that keeps the app alive.  We
+    // stash it in a thread-local for the lifetime of the process (all GPUI
+    // work on iOS happens on the main thread).
+    thread_local! {
+        static APP_HANDLE: std::cell::RefCell<Option<gpui::ApplicationHandle>> =
+            const { std::cell::RefCell::new(None) };
+    }
+
     let platform = Rc::new(super::IosPlatform::new());
-    Application::with_platform(platform).run(|cx: &mut App| {
+    let handle = Application::with_platform(platform).run_embedded(|cx: &mut App| {
         if let Some(cb) = take_app_callback() {
             log::info!("GPUI iOS: Invoking user-provided app callback");
             cb(cx);
@@ -507,6 +523,7 @@ pub fn run_app() {
             cx.activate(true);
         }
     });
+    APP_HANDLE.with(|slot| *slot.borrow_mut() = Some(handle));
 
     // On iOS, Application::run() stores the callback and returns immediately.
     // The finish-launching callback is forwarded to set_finish_launching_callback

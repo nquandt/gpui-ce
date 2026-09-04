@@ -624,15 +624,18 @@ impl IosWindow {
             let window_handle = raw_window
                 .window_handle()
                 .expect("iOS window handle unavailable");
+            let display_handle = raw_window
+                .display_handle()
+                .expect("iOS display handle unavailable");
 
             let target = wgpu::SurfaceTargetUnsafe::RawHandle {
-                raw_display_handle: None,
+                raw_display_handle: Some(display_handle.as_raw()),
                 raw_window_handle: window_handle.as_raw(),
             };
 
             let surface_result = metal_instance.create_surface_unsafe(target);
             match surface_result {
-                Ok(surface) => match WgpuContext::new(metal_instance, &surface, None) {
+                Ok(surface) => match WgpuContext::new(metal_instance, &surface, None, None) {
                     Ok(context) => {
                         // Pre-populate gpu_context so WgpuRenderer::new()
                         // reuses our Metal-backed context (and its instance)
@@ -640,7 +643,7 @@ impl IosWindow {
                         let gpu_context: GpuContext = Rc::new(RefCell::new(Some(context)));
                         drop(surface); // no longer needed — new() creates its own
 
-                        match WgpuRenderer::new(gpu_context, &raw_window, config, None) {
+                        match WgpuRenderer::new(gpu_context, &raw_window, config, None, None) {
                             Ok(renderer) => {
                                 log::info!("iOS wgpu renderer created (Metal)");
                                 *ios_window.renderer.lock() = Some(renderer);

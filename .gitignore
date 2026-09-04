@@ -14,6 +14,8 @@
 *.xcworkspace
 DerivedData/
 xcuserdata/
+**/ios_app/build/
+**/ios_app/build_device/
 
 # AI agents
 .claude/
