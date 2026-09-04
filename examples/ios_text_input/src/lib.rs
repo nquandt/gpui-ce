@@ -10,7 +10,7 @@
 //! (`crates/gpui_mobile/src/ios/text_input_view.rs`).
 
 use gpui::{App, ElementId, Entity, WindowOptions, div, prelude::*, px, rgb};
-use gpui_ce_elements::editable_text::{EditableTextState, text_area, text_input};
+use gpui_ce_elements::editable_text::{EditableTextState, StringStorage, text_area, text_input};
 
 struct TextInputDemo {
     single_line: Entity<EditableTextState>,
@@ -91,17 +91,13 @@ impl Render for TextInputDemo {
 #[unsafe(no_mangle)]
 pub extern "C" fn gpui_ios_text_input_main() {
     gpui_mobile::ios::ffi::set_app_callback(Box::new(|cx: &mut App| {
-        cx.open_window(WindowOptions::default(), |window, cx| {
-            cx.new(|cx| {
-                let single_line =
-                    EditableTextState::use_keyed(ElementId::from("single_line"), window, cx);
-                let multi_line =
-                    EditableTextState::use_keyed(ElementId::from("multi_line"), window, cx);
+        cx.open_window(WindowOptions::default(), |_window, cx| {
+            let single_line = cx.new(|cx| EditableTextState::new(StringStorage::default(), cx));
+            let multi_line = cx.new(|cx| EditableTextState::new(StringStorage::default(), cx));
 
-                TextInputDemo {
-                    single_line,
-                    multi_line,
-                }
+            cx.new(|_cx| TextInputDemo {
+                single_line,
+                multi_line,
             })
         })
         .expect("failed to open text input window");
