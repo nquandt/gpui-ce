@@ -23,7 +23,6 @@ members = [
   "./crates/gpui_path/",
   "./crates/gpui_webview/",
   "./tooling/perf/",
-  "./examples/browser/",
   "./crates/gpui_mobile/",
 ]
 default-members = ["./crates/gpui/"]
