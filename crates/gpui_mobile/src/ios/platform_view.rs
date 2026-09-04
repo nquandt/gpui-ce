@@ -10,9 +10,12 @@ use crate::platform_view::{
 };
 use std::sync::atomic::{AtomicBool, Ordering};
 
-#[cfg(target_os = "ios")]
-use objc2::runtime::{AnyClass, AnyObject, ClassBuilder, Sel};
-use objc2::{class, msg_send, sel};
+use objc2::runtime::AnyObject;
+#[cfg(any(feature = "text_field", feature = "webview"))]
+use objc2::runtime::{AnyClass, ClassBuilder, Sel};
+#[cfg(any(feature = "text_field", feature = "webview"))]
+use objc2::sel;
+use objc2::{class, msg_send};
 
 #[cfg(target_os = "ios")]
 use super::cg_types::ObjcCGRect;
@@ -79,6 +82,8 @@ impl IosPlatformView {
         bounds: &PlatformViewBounds,
         params: &PlatformViewParams,
     ) -> Result<*mut AnyObject, String> {
+        // Only the feature-gated view types read `params`.
+        let _ = params;
         unsafe {
             let frame = ObjcCGRect::new(
                 bounds.x as f64,
@@ -88,10 +93,22 @@ impl IosPlatformView {
             );
 
             let view: *mut AnyObject = match view_type {
+                #[cfg(feature = "video_player")]
                 "video_player" => Self::create_video_player_view(frame, params)?,
+                #[cfg(not(feature = "video_player"))]
+                "video_player" => return Err(Self::feature_disabled_err("video_player")),
+                #[cfg(feature = "webview")]
                 "webview" => Self::create_webview_view(frame, params)?,
+                #[cfg(not(feature = "webview"))]
+                "webview" => return Err(Self::feature_disabled_err("webview")),
+                #[cfg(feature = "camera")]
                 "camera_preview" => Self::create_camera_preview_view(frame, params)?,
+                #[cfg(not(feature = "camera"))]
+                "camera_preview" => return Err(Self::feature_disabled_err("camera")),
+                #[cfg(feature = "text_field")]
                 "text_field" => Self::create_text_field_view(frame, params)?,
+                #[cfg(not(feature = "text_field"))]
+                "text_field" => return Err(Self::feature_disabled_err("text_field")),
                 _ => Self::create_generic_view(frame)?,
             };
 
@@ -115,6 +132,21 @@ impl IosPlatformView {
         }
     }
 
+    /// Error message used when a platform view type is requested but its
+    /// corresponding crate feature was not enabled at compile time.
+    // Only referenced when at least one of the video_player/webview/camera/
+    // text_field features is disabled (see the `match` above); with
+    // `--all-features` none of those call sites exist, so this would
+    // otherwise warn as dead code.
+    #[cfg(target_os = "ios")]
+    #[allow(dead_code)]
+    fn feature_disabled_err(feature: &str) -> String {
+        format!(
+            "Platform view type requires the '{}' crate feature to be enabled",
+            feature
+        )
+    }
+
     /// Create a generic transparent UIView container.
     #[cfg(target_os = "ios")]
     unsafe fn create_generic_view(frame: ObjcCGRect) -> Result<*mut AnyObject, String> {
@@ -130,145 +162,151 @@ impl IosPlatformView {
     }
 
     /// Create a UIView with an AVPlayerLayer for video playback.
-    #[cfg(target_os = "ios")]
+    #[cfg(all(target_os = "ios", feature = "video_player"))]
     unsafe fn create_video_player_view(
         frame: ObjcCGRect,
         params: &PlatformViewParams,
     ) -> Result<*mut AnyObject, String> {
-        // Create a container UIView
-        let uiview_class = class!(UIView);
-        let view: *mut AnyObject = msg_send![uiview_class, alloc];
-        let view: *mut AnyObject = msg_send![view, initWithFrame: frame];
-        if view.is_null() {
-            return Err("Failed to create UIView for video_player".into());
-        }
+        unsafe {
+            // Create a container UIView
+            let uiview_class = class!(UIView);
+            let view: *mut AnyObject = msg_send![uiview_class, alloc];
+            let view: *mut AnyObject = msg_send![view, initWithFrame: frame];
+            if view.is_null() {
+                return Err("Failed to create UIView for video_player".into());
+            }
 
-        let black_color: *mut AnyObject = msg_send![class!(UIColor), blackColor];
-        let _: () = msg_send![view, setBackgroundColor: black_color];
+            let black_color: *mut AnyObject = msg_send![class!(UIColor), blackColor];
+            let _: () = msg_send![view, setBackgroundColor: black_color];
 
-        // If a player_id is provided, try to get the AVPlayer and create AVPlayerLayer
-        if let Some(player_id_str) = params.creation_params.get("player_id") {
-            if let Ok(player_id) = player_id_str.parse::<u32>() {
-                // Get AVPlayer from the video_player package's PLAYERS map
-                if let Some(player_ptr) = crate::packages::video_player::ios_get_player(player_id) {
-                    let player_layer: *mut AnyObject =
-                        msg_send![class!(AVPlayerLayer), playerLayerWithPlayer: player_ptr];
-                    if !player_layer.is_null() {
-                        let _: () = msg_send![player_layer, setFrame: frame];
-                        // Set video gravity to aspect fit
-                        let gravity = Self::make_nsstring("AVLayerVideoGravityResizeAspect");
-                        let _: () = msg_send![player_layer, setVideoGravity: gravity];
-                        let _: () = msg_send![gravity, release];
-                        let view_layer: *mut AnyObject = msg_send![view, layer];
-                        let _: () = msg_send![view_layer, addSublayer: player_layer];
+            // If a player_id is provided, try to get the AVPlayer and create AVPlayerLayer
+            if let Some(player_id_str) = params.creation_params.get("player_id") {
+                if let Ok(player_id) = player_id_str.parse::<u32>() {
+                    // Get AVPlayer from the video_player package's PLAYERS map
+                    if let Some(player_ptr) =
+                        crate::packages::video_player::ios_get_player(player_id)
+                    {
+                        let player_layer: *mut AnyObject =
+                            msg_send![class!(AVPlayerLayer), playerLayerWithPlayer: player_ptr];
+                        if !player_layer.is_null() {
+                            let _: () = msg_send![player_layer, setFrame: frame];
+                            // Set video gravity to aspect fit
+                            let gravity = Self::make_nsstring("AVLayerVideoGravityResizeAspect");
+                            let _: () = msg_send![player_layer, setVideoGravity: gravity];
+                            let view_layer: *mut AnyObject = msg_send![view, layer];
+                            let _: () = msg_send![view_layer, addSublayer: player_layer];
+                        }
                     }
                 }
             }
-        }
 
-        Ok(view)
+            Ok(view)
+        }
     }
 
     /// Create a WKWebView.
-    #[cfg(target_os = "ios")]
+    #[cfg(all(target_os = "ios", feature = "webview"))]
     unsafe fn create_webview_view(
         frame: ObjcCGRect,
         params: &PlatformViewParams,
     ) -> Result<*mut AnyObject, String> {
-        let config: *mut AnyObject = msg_send![class!(WKWebViewConfiguration), alloc];
-        let config: *mut AnyObject = msg_send![config, init];
-        if config.is_null() {
-            return Err("Failed to create WKWebViewConfiguration".into());
-        }
+        unsafe {
+            let config: *mut AnyObject = msg_send![class!(WKWebViewConfiguration), alloc];
+            let config: *mut AnyObject = msg_send![config, init];
+            if config.is_null() {
+                return Err("Failed to create WKWebViewConfiguration".into());
+            }
 
-        let js_enabled = params
-            .creation_params
-            .get("javascript_enabled")
-            .map(|v| v == "true")
-            .unwrap_or(true);
+            let js_enabled = params
+                .creation_params
+                .get("javascript_enabled")
+                .map(|v| v == "true")
+                .unwrap_or(true);
 
-        let prefs: *mut AnyObject = msg_send![config, preferences];
-        if !prefs.is_null() {
-            let _: () = msg_send![prefs, setJavaScriptEnabled: js_enabled];
-        }
+            let prefs: *mut AnyObject = msg_send![config, preferences];
+            if !prefs.is_null() {
+                let _: () = msg_send![prefs, setJavaScriptEnabled: js_enabled];
+            }
 
-        let webview: *mut AnyObject = msg_send![class!(WKWebView), alloc];
-        let webview: *mut AnyObject =
-            msg_send![webview, initWithFrame: frame, configuration: config];
-        if webview.is_null() {
-            return Err("Failed to create WKWebView".into());
-        }
+            let webview: *mut AnyObject = msg_send![class!(WKWebView), alloc];
+            let webview: *mut AnyObject =
+                msg_send![webview, initWithFrame: frame, configuration: config];
+            if webview.is_null() {
+                return Err("Failed to create WKWebView".into());
+            }
 
-        // `WKWebView.navigationDelegate` is a weak reference, so the delegate
-        // must be retained independently. We intentionally leak it for the
-        // lifetime of the webview (matches the single-active-webview model
-        // of `packages::webview`'s URL-changed callback).
-        let delegate_class = Self::register_navigation_delegate_class();
-        let delegate: *mut AnyObject = msg_send![delegate_class, alloc];
-        let delegate: *mut AnyObject = msg_send![delegate, init];
-        let _: () = msg_send![webview, setNavigationDelegate: delegate];
+            // `WKWebView.navigationDelegate` is a weak reference, so the delegate
+            // must be retained independently. We intentionally leak it for the
+            // lifetime of the webview (matches the single-active-webview model
+            // of `packages::webview`'s URL-changed callback).
+            let delegate_class = Self::register_navigation_delegate_class();
+            let delegate: *mut AnyObject = msg_send![delegate_class, alloc];
+            let delegate: *mut AnyObject = msg_send![delegate, init];
+            let _: () = msg_send![webview, setNavigationDelegate: delegate];
 
-        // Load URL or HTML if provided
-        if let Some(url) = params.creation_params.get("url") {
-            if !url.is_empty() {
-                let ns_url_str = Self::make_nsstring(url);
-                let nsurl: *mut AnyObject = msg_send![class!(NSURL), URLWithString: ns_url_str];
-                if !nsurl.is_null() {
-                    let request: *mut AnyObject =
-                        msg_send![class!(NSURLRequest), requestWithURL: nsurl];
-                    let _: *mut AnyObject = msg_send![webview, loadRequest: request];
+            // Load URL or HTML if provided
+            if let Some(url) = params.creation_params.get("url") {
+                if !url.is_empty() {
+                    let ns_url_str = Self::make_nsstring(url);
+                    let nsurl: *mut AnyObject = msg_send![class!(NSURL), URLWithString: ns_url_str];
+                    if !nsurl.is_null() {
+                        let request: *mut AnyObject =
+                            msg_send![class!(NSURLRequest), requestWithURL: nsurl];
+                        let _: *mut AnyObject = msg_send![webview, loadRequest: request];
+                    }
                 }
-                let _: () = msg_send![ns_url_str, release];
+            } else if let Some(html) = params.creation_params.get("html") {
+                if !html.is_empty() {
+                    let ns_html = Self::make_nsstring(html);
+                    let base_url: *mut AnyObject = std::ptr::null_mut();
+                    let _: *mut AnyObject =
+                        msg_send![webview, loadHTMLString: ns_html, baseURL: base_url];
+                }
             }
-        } else if let Some(html) = params.creation_params.get("html") {
-            if !html.is_empty() {
-                let ns_html = Self::make_nsstring(html);
-                let base_url: *mut AnyObject = std::ptr::null_mut();
-                let _: *mut AnyObject =
-                    msg_send![webview, loadHTMLString: ns_html, baseURL: base_url];
-                let _: () = msg_send![ns_html, release];
-            }
-        }
 
-        Ok(webview)
+            Ok(webview)
+        }
     }
 
     /// Create a UIView with AVCaptureVideoPreviewLayer for camera preview.
-    #[cfg(target_os = "ios")]
+    #[cfg(all(target_os = "ios", feature = "camera"))]
     unsafe fn create_camera_preview_view(
         frame: ObjcCGRect,
         params: &PlatformViewParams,
     ) -> Result<*mut AnyObject, String> {
-        let uiview_class = class!(UIView);
-        let view: *mut AnyObject = msg_send![uiview_class, alloc];
-        let view: *mut AnyObject = msg_send![view, initWithFrame: frame];
-        if view.is_null() {
-            return Err("Failed to create UIView for camera_preview".into());
-        }
+        unsafe {
+            let uiview_class = class!(UIView);
+            let view: *mut AnyObject = msg_send![uiview_class, alloc];
+            let view: *mut AnyObject = msg_send![view, initWithFrame: frame];
+            if view.is_null() {
+                return Err("Failed to create UIView for camera_preview".into());
+            }
 
-        let black_color: *mut AnyObject = msg_send![class!(UIColor), blackColor];
-        let _: () = msg_send![view, setBackgroundColor: black_color];
+            let black_color: *mut AnyObject = msg_send![class!(UIColor), blackColor];
+            let _: () = msg_send![view, setBackgroundColor: black_color];
 
-        // If a session_id is provided, try to get the AVCaptureSession and create preview layer
-        if let Some(session_id_str) = params.creation_params.get("session_id") {
-            if let Ok(session_id) = session_id_str.parse::<usize>() {
-                if let Some(session_ptr) = crate::packages::camera::ios_get_session(session_id) {
-                    let layer: *mut AnyObject =
-                        msg_send![class!(AVCaptureVideoPreviewLayer), alloc];
-                    let layer: *mut AnyObject = msg_send![layer, initWithSession: session_ptr];
-                    if !layer.is_null() {
-                        let _: () = msg_send![layer, setFrame: frame];
-                        let gravity = Self::make_nsstring("AVLayerVideoGravityResizeAspectFill");
-                        let _: () = msg_send![layer, setVideoGravity: gravity];
-                        let _: () = msg_send![gravity, release];
-                        let view_layer: *mut AnyObject = msg_send![view, layer];
-                        let _: () = msg_send![view_layer, addSublayer: layer];
+            // If a session_id is provided, try to get the AVCaptureSession and create preview layer
+            if let Some(session_id_str) = params.creation_params.get("session_id") {
+                if let Ok(session_id) = session_id_str.parse::<usize>() {
+                    if let Some(session_ptr) = crate::packages::camera::ios_get_session(session_id)
+                    {
+                        let layer: *mut AnyObject =
+                            msg_send![class!(AVCaptureVideoPreviewLayer), alloc];
+                        let layer: *mut AnyObject = msg_send![layer, initWithSession: session_ptr];
+                        if !layer.is_null() {
+                            let _: () = msg_send![layer, setFrame: frame];
+                            let gravity =
+                                Self::make_nsstring("AVLayerVideoGravityResizeAspectFill");
+                            let _: () = msg_send![layer, setVideoGravity: gravity];
+                            let view_layer: *mut AnyObject = msg_send![view, layer];
+                            let _: () = msg_send![view_layer, addSublayer: layer];
+                        }
                     }
                 }
             }
-        }
 
-        Ok(view)
+            Ok(view)
+        }
     }
 
     /// Create a native `UITextField`.
@@ -277,59 +315,65 @@ impl IosPlatformView {
     /// this is a real `UIResponder`/`UITextInput`, so it gets cursor
     /// placement, double-tap/drag selection, copy/paste, and autocorrect
     /// for free from UIKit.
-    #[cfg(target_os = "ios")]
+    #[cfg(all(target_os = "ios", feature = "text_field"))]
     unsafe fn create_text_field_view(
         frame: ObjcCGRect,
         params: &PlatformViewParams,
     ) -> Result<*mut AnyObject, String> {
-        let field: *mut AnyObject = msg_send![class!(UITextField), alloc];
-        let field: *mut AnyObject = msg_send![field, initWithFrame: frame];
-        if field.is_null() {
-            return Err("Failed to create UITextField".into());
+        unsafe {
+            let field: *mut AnyObject = msg_send![class!(UITextField), alloc];
+            let field: *mut AnyObject = msg_send![field, initWithFrame: frame];
+            if field.is_null() {
+                return Err("Failed to create UITextField".into());
+            }
+
+            let _: () = msg_send![field, setBorderStyle: 3_isize]; // UITextBorderStyleRoundedRect
+
+            if let Some(text) = params.creation_params.get("text") {
+                let ns_text = Self::make_nsstring(text);
+                let _: () = msg_send![field, setText: ns_text];
+            }
+            if let Some(placeholder) = params.creation_params.get("placeholder") {
+                let ns_placeholder = Self::make_nsstring(placeholder);
+                let _: () = msg_send![field, setPlaceholder: ns_placeholder];
+            }
+
+            // Wire up a target for text-changed and return-key notifications.
+            // `addTarget:action:forControlEvents:` keeps only an unretained
+            // reference, so — like the navigation delegate above — we
+            // intentionally leak the target for the field's lifetime.
+            let target_class = Self::register_text_field_target_class();
+            let target: *mut AnyObject = msg_send![target_class, alloc];
+            let target: *mut AnyObject = msg_send![target, init];
+            let _: () = msg_send![field,
+                addTarget: target,
+                action: sel!(gpuiTextChanged:),
+                forControlEvents: 1usize << 17 // UIControlEventEditingChanged
+            ];
+            let _: () = msg_send![field,
+                addTarget: target,
+                action: sel!(gpuiDidEndOnExit:),
+                forControlEvents: 1usize << 19 // UIControlEventEditingDidEndOnExit
+            ];
+
+            Ok(field)
         }
-
-        let _: () = msg_send![field, setBorderStyle: 3_isize]; // UITextBorderStyleRoundedRect
-
-        if let Some(text) = params.creation_params.get("text") {
-            let ns_text = Self::make_nsstring(text);
-            let _: () = msg_send![field, setText: ns_text];
-        }
-        if let Some(placeholder) = params.creation_params.get("placeholder") {
-            let ns_placeholder = Self::make_nsstring(placeholder);
-            let _: () = msg_send![field, setPlaceholder: ns_placeholder];
-        }
-
-        // Wire up a target for text-changed and return-key notifications.
-        // `addTarget:action:forControlEvents:` keeps only an unretained
-        // reference, so — like the navigation delegate above — we
-        // intentionally leak the target for the field's lifetime.
-        let target_class = Self::register_text_field_target_class();
-        let target: *mut AnyObject = msg_send![target_class, alloc];
-        let target: *mut AnyObject = msg_send![target, init];
-        let _: () = msg_send![field,
-            addTarget: target,
-            action: sel!(gpuiTextChanged:),
-            forControlEvents: 1usize << 17 // UIControlEventEditingChanged
-        ];
-        let _: () = msg_send![field,
-            addTarget: target,
-            action: sel!(gpuiDidEndOnExit:),
-            forControlEvents: 1usize << 19 // UIControlEventEditingDidEndOnExit
-        ];
-
-        Ok(field)
     }
 
     /// Register (once) the target object handling `UITextField` control
     /// events for the "text_field" platform view type.
-    #[cfg(target_os = "ios")]
+    #[cfg(all(target_os = "ios", feature = "text_field"))]
     fn register_text_field_target_class() -> &'static AnyClass {
         static REGISTERED: std::sync::Once = std::sync::Once::new();
         REGISTERED.call_once(|| {
             let superclass = class!(NSObject);
             let mut decl = ClassBuilder::new(c"GPUITextFieldTarget", superclass).unwrap();
 
-            unsafe extern "C" fn text_changed(_this: *mut AnyObject, _sel: Sel, sender: *mut AnyObject) {
+            unsafe extern "C" fn text_changed(
+                _this: *mut AnyObject,
+                _sel: Sel,
+                sender: *mut AnyObject,
+            ) {
                 unsafe {
                     if sender.is_null() {
                         return;
@@ -342,12 +386,18 @@ impl IosPlatformView {
                     if utf8.is_null() {
                         return;
                     }
-                    let text_str = std::ffi::CStr::from_ptr(utf8).to_string_lossy().into_owned();
+                    let text_str = std::ffi::CStr::from_ptr(utf8)
+                        .to_string_lossy()
+                        .into_owned();
                     crate::packages::text_field::dispatch_text_changed(&text_str);
                 }
             }
 
-            unsafe extern "C" fn did_end_on_exit(_this: *mut AnyObject, _sel: Sel, _sender: *mut AnyObject) {
+            unsafe extern "C" fn did_end_on_exit(
+                _this: *mut AnyObject,
+                _sel: Sel,
+                _sender: *mut AnyObject,
+            ) {
                 crate::packages::text_field::dispatch_submit();
             }
 
@@ -370,14 +420,14 @@ impl IosPlatformView {
 
     #[cfg(target_os = "ios")]
     unsafe fn make_nsstring(s: &str) -> *mut AnyObject {
-        crate::ios::util::nsstring(s)
+        unsafe { crate::ios::util::nsstring(s) }
     }
 
     /// Register (once) a `WKNavigationDelegate` that forwards URL changes
     /// to `packages::webview`'s `dispatch_url_changed`, so app code can
     /// observe in-page navigation (e.g. tapping a link) via
     /// `packages::webview::set_on_url_changed`.
-    #[cfg(target_os = "ios")]
+    #[cfg(all(target_os = "ios", feature = "webview"))]
     fn register_navigation_delegate_class() -> &'static AnyClass {
         static REGISTERED: std::sync::Once = std::sync::Once::new();
         REGISTERED.call_once(|| {
@@ -405,7 +455,9 @@ impl IosPlatformView {
                     if utf8.is_null() {
                         return;
                     }
-                    let url_str = std::ffi::CStr::from_ptr(utf8).to_string_lossy().into_owned();
+                    let url_str = std::ffi::CStr::from_ptr(utf8)
+                        .to_string_lossy()
+                        .into_owned();
                     crate::packages::webview::dispatch_url_changed(&url_str);
                 }
             }
@@ -438,12 +490,22 @@ impl IosPlatformView {
                 decl.add_method(
                     sel!(webView:didCommitNavigation:),
                     did_commit_navigation
-                        as unsafe extern "C" fn(*mut AnyObject, Sel, *mut AnyObject, *mut AnyObject),
+                        as unsafe extern "C" fn(
+                            *mut AnyObject,
+                            Sel,
+                            *mut AnyObject,
+                            *mut AnyObject,
+                        ),
                 );
                 decl.add_method(
                     sel!(webView:didFinishNavigation:),
                     did_finish_navigation
-                        as unsafe extern "C" fn(*mut AnyObject, Sel, *mut AnyObject, *mut AnyObject),
+                        as unsafe extern "C" fn(
+                            *mut AnyObject,
+                            Sel,
+                            *mut AnyObject,
+                            *mut AnyObject,
+                        ),
                 );
             }
 
@@ -494,7 +556,11 @@ impl IosPlatformView {
             if utf8.is_null() {
                 return None;
             }
-            Some(std::ffi::CStr::from_ptr(utf8).to_string_lossy().into_owned())
+            Some(
+                std::ffi::CStr::from_ptr(utf8)
+                    .to_string_lossy()
+                    .into_owned(),
+            )
         }
     }
 

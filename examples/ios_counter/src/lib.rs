@@ -1,15 +1,17 @@
 #![cfg(target_os = "ios")]
 
-use gpui::{
-    App, MouseButton, WindowOptions, div, prelude::*, rgb,
-};
+use gpui::{App, MouseButton, WindowOptions, div, prelude::*, rgb};
 
 struct CounterView {
     count: i32,
 }
 
 impl Render for CounterView {
-    fn render(&mut self, _window: &mut gpui::Window, cx: &mut gpui::Context<Self>) -> impl IntoElement {
+    fn render(
+        &mut self,
+        _window: &mut gpui::Window,
+        cx: &mut gpui::Context<Self>,
+    ) -> impl IntoElement {
         div()
             .flex()
             .flex_col()

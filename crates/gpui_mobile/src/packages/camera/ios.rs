@@ -245,46 +245,48 @@ fn resolution_to_preset(resolution: ResolutionPreset) -> &'static str {
 }
 
 unsafe fn find_device_by_name(name: &str) -> *mut AnyObject {
-    // Use AVCaptureDeviceDiscoverySession to find all cameras
-    let device_types: *mut AnyObject = {
-        let wide = nsstring("AVCaptureDeviceTypeBuiltInWideAngleCamera");
-        let ultra = nsstring("AVCaptureDeviceTypeBuiltInUltraWideCamera");
-        let tele = nsstring("AVCaptureDeviceTypeBuiltInTelephotoCamera");
-        msg_send![class!(NSArray),
-            arrayWithObjects: [wide, ultra, tele].as_ptr(),
-            count: 3usize
-        ]
-    };
+    unsafe {
+        // Use AVCaptureDeviceDiscoverySession to find all cameras
+        let device_types: *mut AnyObject = {
+            let wide = nsstring("AVCaptureDeviceTypeBuiltInWideAngleCamera");
+            let ultra = nsstring("AVCaptureDeviceTypeBuiltInUltraWideCamera");
+            let tele = nsstring("AVCaptureDeviceTypeBuiltInTelephotoCamera");
+            msg_send![class!(NSArray),
+                arrayWithObjects: [wide, ultra, tele].as_ptr(),
+                count: 3usize
+            ]
+        };
 
-    let media_type = nsstring("vide"); // AVMediaTypeVideo
-    let position: i64 = 0; // AVCaptureDevicePositionUnspecified
+        let media_type = nsstring("vide"); // AVMediaTypeVideo
+        let position: i64 = 0; // AVCaptureDevicePositionUnspecified
 
-    let discovery: *mut AnyObject = msg_send![class!(AVCaptureDeviceDiscoverySession),
-        discoverySessionWithDeviceTypes: device_types,
-        mediaType: media_type,
-        position: position
-    ];
+        let discovery: *mut AnyObject = msg_send![class!(AVCaptureDeviceDiscoverySession),
+            discoverySessionWithDeviceTypes: device_types,
+            mediaType: media_type,
+            position: position
+        ];
 
-    if discovery.is_null() {
-        return std::ptr::null_mut();
-    }
+        if discovery.is_null() {
+            return std::ptr::null_mut();
+        }
 
-    let devices: *mut AnyObject = msg_send![discovery, devices];
-    let count: usize = msg_send![devices, count];
+        let devices: *mut AnyObject = msg_send![discovery, devices];
+        let count: usize = msg_send![devices, count];
 
-    for i in 0..count {
-        let device: *mut AnyObject = msg_send![devices, objectAtIndex: i];
-        let unique_id: *mut AnyObject = msg_send![device, uniqueID];
-        let cstr: *const std::ffi::c_char = msg_send![unique_id, UTF8String];
-        if !cstr.is_null() {
-            let id = std::ffi::CStr::from_ptr(cstr).to_string_lossy();
-            if id == name {
-                return device;
+        for i in 0..count {
+            let device: *mut AnyObject = msg_send![devices, objectAtIndex: i];
+            let unique_id: *mut AnyObject = msg_send![device, uniqueID];
+            let cstr: *const std::ffi::c_char = msg_send![unique_id, UTF8String];
+            if !cstr.is_null() {
+                let id = std::ffi::CStr::from_ptr(cstr).to_string_lossy();
+                if id == name {
+                    return device;
+                }
             }
         }
-    }
 
-    std::ptr::null_mut()
+        std::ptr::null_mut()
+    }
 }
 
 // ── Public API ──────────────────────────────────────────────────────────────

@@ -5,8 +5,12 @@ use std::rc::Rc;
 
 use gpui::{App, ClickEvent, WindowOptions, div, prelude::*, px, rgb};
 use gpui_mobile::components::platform_view_element::platform_view_element;
-use gpui_mobile::packages::text_field::{create_text_field, is_focused, set_on_submit, set_text_on, TextFieldHandle};
-use gpui_mobile::packages::webview::{WebViewHandle, WebViewSettings, load_url, set_on_url_changed};
+use gpui_mobile::packages::text_field::{
+    TextFieldHandle, create_text_field, is_focused, set_on_submit, set_text_on,
+};
+use gpui_mobile::packages::webview::{
+    WebViewHandle, WebViewSettings, load_url, set_on_url_changed,
+};
 use gpui_mobile::safe_area_insets;
 
 const HOME_URL: &str = "https://www.rust-lang.org";

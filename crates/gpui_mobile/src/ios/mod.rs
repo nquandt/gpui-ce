@@ -10,11 +10,13 @@
 pub(crate) mod cg_types;
 mod dispatcher;
 mod display;
+mod document_picker;
 mod events;
 pub mod ffi;
 mod platform;
 pub mod platform_view;
 mod text_input;
+mod text_input_view;
 mod text_system;
 pub mod util;
 mod window;
