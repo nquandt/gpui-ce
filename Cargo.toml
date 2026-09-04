@@ -22,7 +22,6 @@ members = [
   "./crates/gpui_ce_util/",
   "./crates/gpui_path/",
   "./tooling/perf/",
-  "./examples/counter/",
   "./examples/browser/",
   "./crates/gpui_mobile/",
   "./crates/gpui_webview/",

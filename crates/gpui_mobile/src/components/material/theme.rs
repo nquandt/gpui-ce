@@ -72,12 +72,7 @@ pub fn color(hex: u32) -> Hsla {
 /// Transparent color constant — `hsla(0, 0, 0, 0)`.
 ///
 /// Useful as a default / no-op color in conditional expressions.
-pub const TRANSPARENT: Hsla = Hsla {
-    h: 0.0,
-    s: 0.0,
-    l: 0.0,
-    a: 0.0,
-};
+pub const TRANSPARENT: Hsla = gpui::transparent_black();
 
 /// A complete Material Design 3 color theme.
 ///

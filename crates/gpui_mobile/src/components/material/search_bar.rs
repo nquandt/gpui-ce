@@ -307,7 +307,12 @@ impl IntoElement for SearchBar {
             // Simulate MD3 elevation level 2 with a subtle border + opacity trick
             let shadow_color: Hsla = {
                 let base = color(t.shadow);
-                gpui::hsla(base.h, base.s, base.l, 0.15)
+                gpui::hsla(
+                    base.color.hue.into_degrees() / 360.0,
+                    base.color.saturation,
+                    base.color.lightness,
+                    0.15,
+                )
             };
             bar = bar.border_1().border_color(shadow_color);
         }

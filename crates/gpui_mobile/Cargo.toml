@@ -63,7 +63,7 @@ futures.workspace = true
 raw-window-handle = "0.6"
 
 # ── GPUI core crate (workspace local, no default features for mobile) ────────
-gpui = { path = "../gpui/", version = "0.2.2", default-features = false }
+gpui = { path = "../gpui/", version = "0.2.2", package = "gpui-ce", default-features = false }
 
 # ── iOS ──────────────────────────────────────────────────────────────────────
 
@@ -80,7 +80,7 @@ uuid.workspace = true
 block2 = "0.6"
 
 # wgpu renderer (Metal backend on iOS)
-gpui_wgpu = { path = "../gpui_wgpu/", version = "0.1.0", features = ["font-kit"] }
+gpui_wgpu = { path = "../gpui_wgpu/", version = "0.1.0", package = "gpui_ce_wgpu", features = ["font-kit"] }
 wgpu.workspace = true
 
 # Text / font stack
@@ -107,7 +107,7 @@ android-activity = { version = "0.6", features = ["native-activity"] }
 android_logger = "0.15"
 
 # wgpu renderer (Vulkan backend on Android)
-gpui_wgpu = { path = "../gpui_wgpu/", version = "0.1.0", features = ["font-kit"] }
+gpui_wgpu = { path = "../gpui_wgpu/", version = "0.1.0", package = "gpui_ce_wgpu", features = ["font-kit"] }
 
 # rustc-hash is required by the PlatformKeyboardMapper trait signature
 rustc-hash = "2"

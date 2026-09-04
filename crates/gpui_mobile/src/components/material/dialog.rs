@@ -237,7 +237,12 @@ impl IntoElement for BasicDialog {
 
         let scrim_color: Hsla = {
             let base = color(t.scrim);
-            gpui::hsla(base.h, base.s, base.l, SCRIM_OPACITY)
+            gpui::hsla(
+                base.color.hue.into_degrees() / 360.0,
+                base.color.saturation,
+                base.color.lightness,
+                SCRIM_OPACITY,
+            )
         };
 
         let container_bg = color(t.surface_container_high);
@@ -707,7 +712,12 @@ impl IntoElement for SimpleDialog {
 
         let scrim_color: Hsla = {
             let base = color(t.scrim);
-            gpui::hsla(base.h, base.s, base.l, SCRIM_OPACITY)
+            gpui::hsla(
+                base.color.hue.into_degrees() / 360.0,
+                base.color.saturation,
+                base.color.lightness,
+                SCRIM_OPACITY,
+            )
         };
 
         let container_bg = color(t.surface_container_high);

@@ -369,7 +369,12 @@ impl IntoElement for Menu {
         // Shadow for elevation
         let shadow_color: Hsla = if self.elevated {
             let base = color(t.shadow);
-            gpui::hsla(base.h, base.s, base.l, 0.15)
+            gpui::hsla(
+                base.color.hue.into_degrees() / 360.0,
+                base.color.saturation,
+                base.color.lightness,
+                0.15,
+            )
         } else {
             TRANSPARENT
         };
