@@ -647,6 +647,7 @@ impl IosWindow {
     }
 
     /// Get the raw pointer to the GPUIMetalView.
+    #[allow(dead_code)]
     pub fn metal_view_ptr(&self) -> *mut AnyObject {
         self.view
     }
@@ -2056,7 +2057,7 @@ impl PlatformAtlas for FallbackAtlas {
         let mut state = self.state.lock();
 
         if let Some(tile) = state.tiles.get(key) {
-            return Ok(Some(tile.clone()));
+            return Ok(Some(*tile));
         }
 
         let data = build()?;
@@ -2077,7 +2078,7 @@ impl PlatformAtlas for FallbackAtlas {
                 },
             };
 
-            state.tiles.insert(key.clone(), tile.clone());
+            state.tiles.insert(key.clone(), tile);
             Ok(Some(tile))
         } else {
             Ok(None)

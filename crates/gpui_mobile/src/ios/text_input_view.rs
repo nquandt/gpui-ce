@@ -55,7 +55,9 @@ fn make_position(offset: isize) -> *mut AnyObject {
         {
             *(*obj).get_mut_ivar::<isize>(OFFSET_IVAR) = offset;
         }
-        obj
+        // UIKit expects these accessor-style results to be autoreleased;
+        // returning the +1 from alloc/init would leak one object per query.
+        msg_send![obj, autorelease]
     }
 }
 
@@ -140,7 +142,8 @@ fn make_range(start: isize, end: isize) -> *mut AnyObject {
             *(*obj).get_mut_ivar::<isize>(START_IVAR) = start;
             *(*obj).get_mut_ivar::<isize>(END_IVAR) = end;
         }
-        obj
+        // See `make_position`: hand UIKit an autoreleased object.
+        msg_send![obj, autorelease]
     }
 }
 
@@ -442,7 +445,8 @@ pub(crate) fn register_text_input_view_class() -> &'static AnyClass {
                     return;
                 };
                 let s = nsstring_to_string(text);
-                let new_sel = if selected_range.location == usize::MAX {
+                // NSNotFound is NSIntegerMax, not usize::MAX.
+                let new_sel = if selected_range.location >= isize::MAX as usize {
                     None
                 } else {
                     Some(selected_range.location..(selected_range.location + selected_range.length))
