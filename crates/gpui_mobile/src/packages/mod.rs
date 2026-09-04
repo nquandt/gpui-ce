@@ -39,6 +39,9 @@ pub mod sensors;
 #[cfg(feature = "webview")]
 pub mod webview;
 
+#[cfg(feature = "text_field")]
+pub mod text_field;
+
 #[cfg(feature = "file_selector")]
 pub mod file_selector;
 

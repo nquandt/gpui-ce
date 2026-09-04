@@ -1,0 +1,19 @@
+[package]
+name = "ios_browser"
+version = "0.1.0"
+edition = "2024"
+publish = false
+
+[lib]
+name = "ios_browser"
+crate-type = ["staticlib"]
+
+[dependencies]
+gpui = { path = "../../crates/gpui/", package = "gpui-ce" }
+gpui_mobile = { path = "../../crates/gpui_mobile/", default-features = false, features = [
+  "webview",
+  "text_field",
+  "video_player",
+  "camera",
+] }
+log.workspace = true

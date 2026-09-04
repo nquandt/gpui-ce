@@ -11,8 +11,8 @@ use crate::platform_view::{
 use std::sync::atomic::{AtomicBool, Ordering};
 
 #[cfg(target_os = "ios")]
-use objc2::runtime::AnyObject;
-use objc2::{class, msg_send};
+use objc2::runtime::{AnyClass, AnyObject, ClassBuilder, Sel};
+use objc2::{class, msg_send, sel};
 
 #[cfg(target_os = "ios")]
 use super::cg_types::ObjcCGRect;
@@ -91,6 +91,7 @@ impl IosPlatformView {
                 "video_player" => Self::create_video_player_view(frame, params)?,
                 "webview" => Self::create_webview_view(frame, params)?,
                 "camera_preview" => Self::create_camera_preview_view(frame, params)?,
+                "text_field" => Self::create_text_field_view(frame, params)?,
                 _ => Self::create_generic_view(frame)?,
             };
 
@@ -198,6 +199,15 @@ impl IosPlatformView {
             return Err("Failed to create WKWebView".into());
         }
 
+        // `WKWebView.navigationDelegate` is a weak reference, so the delegate
+        // must be retained independently. We intentionally leak it for the
+        // lifetime of the webview (matches the single-active-webview model
+        // of `packages::webview`'s URL-changed callback).
+        let delegate_class = Self::register_navigation_delegate_class();
+        let delegate: *mut AnyObject = msg_send![delegate_class, alloc];
+        let delegate: *mut AnyObject = msg_send![delegate, init];
+        let _: () = msg_send![webview, setNavigationDelegate: delegate];
+
         // Load URL or HTML if provided
         if let Some(url) = params.creation_params.get("url") {
             if !url.is_empty() {
@@ -261,9 +271,186 @@ impl IosPlatformView {
         Ok(view)
     }
 
+    /// Create a native `UITextField`.
+    ///
+    /// Unlike the manually-drawn GPUI text bars elsewhere in this crate,
+    /// this is a real `UIResponder`/`UITextInput`, so it gets cursor
+    /// placement, double-tap/drag selection, copy/paste, and autocorrect
+    /// for free from UIKit.
+    #[cfg(target_os = "ios")]
+    unsafe fn create_text_field_view(
+        frame: ObjcCGRect,
+        params: &PlatformViewParams,
+    ) -> Result<*mut AnyObject, String> {
+        let field: *mut AnyObject = msg_send![class!(UITextField), alloc];
+        let field: *mut AnyObject = msg_send![field, initWithFrame: frame];
+        if field.is_null() {
+            return Err("Failed to create UITextField".into());
+        }
+
+        let _: () = msg_send![field, setBorderStyle: 3_isize]; // UITextBorderStyleRoundedRect
+
+        if let Some(text) = params.creation_params.get("text") {
+            let ns_text = Self::make_nsstring(text);
+            let _: () = msg_send![field, setText: ns_text];
+        }
+        if let Some(placeholder) = params.creation_params.get("placeholder") {
+            let ns_placeholder = Self::make_nsstring(placeholder);
+            let _: () = msg_send![field, setPlaceholder: ns_placeholder];
+        }
+
+        // Wire up a target for text-changed and return-key notifications.
+        // `addTarget:action:forControlEvents:` keeps only an unretained
+        // reference, so — like the navigation delegate above — we
+        // intentionally leak the target for the field's lifetime.
+        let target_class = Self::register_text_field_target_class();
+        let target: *mut AnyObject = msg_send![target_class, alloc];
+        let target: *mut AnyObject = msg_send![target, init];
+        let _: () = msg_send![field,
+            addTarget: target,
+            action: sel!(gpuiTextChanged:),
+            forControlEvents: 1usize << 17 // UIControlEventEditingChanged
+        ];
+        let _: () = msg_send![field,
+            addTarget: target,
+            action: sel!(gpuiDidEndOnExit:),
+            forControlEvents: 1usize << 19 // UIControlEventEditingDidEndOnExit
+        ];
+
+        Ok(field)
+    }
+
+    /// Register (once) the target object handling `UITextField` control
+    /// events for the "text_field" platform view type.
+    #[cfg(target_os = "ios")]
+    fn register_text_field_target_class() -> &'static AnyClass {
+        static REGISTERED: std::sync::Once = std::sync::Once::new();
+        REGISTERED.call_once(|| {
+            let superclass = class!(NSObject);
+            let mut decl = ClassBuilder::new(c"GPUITextFieldTarget", superclass).unwrap();
+
+            unsafe extern "C" fn text_changed(_this: *mut AnyObject, _sel: Sel, sender: *mut AnyObject) {
+                unsafe {
+                    if sender.is_null() {
+                        return;
+                    }
+                    let text: *mut AnyObject = msg_send![sender, text];
+                    if text.is_null() {
+                        return;
+                    }
+                    let utf8: *const i8 = msg_send![text, UTF8String];
+                    if utf8.is_null() {
+                        return;
+                    }
+                    let text_str = std::ffi::CStr::from_ptr(utf8).to_string_lossy().into_owned();
+                    crate::packages::text_field::dispatch_text_changed(&text_str);
+                }
+            }
+
+            unsafe extern "C" fn did_end_on_exit(_this: *mut AnyObject, _sel: Sel, _sender: *mut AnyObject) {
+                crate::packages::text_field::dispatch_submit();
+            }
+
+            unsafe {
+                decl.add_method(
+                    sel!(gpuiTextChanged:),
+                    text_changed as unsafe extern "C" fn(*mut AnyObject, Sel, *mut AnyObject),
+                );
+                decl.add_method(
+                    sel!(gpuiDidEndOnExit:),
+                    did_end_on_exit as unsafe extern "C" fn(*mut AnyObject, Sel, *mut AnyObject),
+                );
+            }
+
+            decl.register();
+        });
+
+        class!(GPUITextFieldTarget)
+    }
+
     #[cfg(target_os = "ios")]
     unsafe fn make_nsstring(s: &str) -> *mut AnyObject {
         crate::ios::util::nsstring(s)
+    }
+
+    /// Register (once) a `WKNavigationDelegate` that forwards URL changes
+    /// to `packages::webview`'s `dispatch_url_changed`, so app code can
+    /// observe in-page navigation (e.g. tapping a link) via
+    /// `packages::webview::set_on_url_changed`.
+    #[cfg(target_os = "ios")]
+    fn register_navigation_delegate_class() -> &'static AnyClass {
+        static REGISTERED: std::sync::Once = std::sync::Once::new();
+        REGISTERED.call_once(|| {
+            let superclass = class!(NSObject);
+            let mut decl = ClassBuilder::new(c"GPUIWebViewNavigationDelegate", superclass).unwrap();
+
+            if let Some(protocol) = objc2::runtime::AnyProtocol::get(c"WKNavigationDelegate") {
+                decl.add_protocol(protocol);
+            }
+
+            unsafe fn report_current_url(web_view: *mut AnyObject) {
+                unsafe {
+                    if web_view.is_null() {
+                        return;
+                    }
+                    let url: *mut AnyObject = msg_send![web_view, URL];
+                    if url.is_null() {
+                        return;
+                    }
+                    let absolute_string: *mut AnyObject = msg_send![url, absoluteString];
+                    if absolute_string.is_null() {
+                        return;
+                    }
+                    let utf8: *const i8 = msg_send![absolute_string, UTF8String];
+                    if utf8.is_null() {
+                        return;
+                    }
+                    let url_str = std::ffi::CStr::from_ptr(utf8).to_string_lossy().into_owned();
+                    crate::packages::webview::dispatch_url_changed(&url_str);
+                }
+            }
+
+            // `didCommitNavigation` fires as soon as the navigation is
+            // confirmed (URL bar should update here, like Safari does) —
+            // well before the page finishes loading all its resources.
+            // `didFinishNavigation` is still handled as a fallback/final
+            // sync (e.g. for URL changes via client-side redirects that
+            // don't go through a full navigation commit).
+            unsafe extern "C" fn did_commit_navigation(
+                _this: *mut AnyObject,
+                _sel: Sel,
+                web_view: *mut AnyObject,
+                _navigation: *mut AnyObject,
+            ) {
+                unsafe { report_current_url(web_view) };
+            }
+
+            unsafe extern "C" fn did_finish_navigation(
+                _this: *mut AnyObject,
+                _sel: Sel,
+                web_view: *mut AnyObject,
+                _navigation: *mut AnyObject,
+            ) {
+                unsafe { report_current_url(web_view) };
+            }
+
+            unsafe {
+                decl.add_method(
+                    sel!(webView:didCommitNavigation:),
+                    did_commit_navigation
+                        as unsafe extern "C" fn(*mut AnyObject, Sel, *mut AnyObject, *mut AnyObject),
+                );
+                decl.add_method(
+                    sel!(webView:didFinishNavigation:),
+                    did_finish_navigation
+                        as unsafe extern "C" fn(*mut AnyObject, Sel, *mut AnyObject, *mut AnyObject),
+                );
+            }
+
+            decl.register();
+        });
+
+        class!(GPUIWebViewNavigationDelegate)
     }
 
     /// Returns the raw pointer to the underlying `UIView`.
@@ -275,11 +462,73 @@ impl IosPlatformView {
         *self.native_view.lock().unwrap()
     }
 
+    /// Set the `text` property on the underlying view (e.g. a `UITextField`
+    /// created for the "text_field" view type). No-op if the view is
+    /// disposed or doesn't respond to `setText:`.
+    #[cfg(target_os = "ios")]
+    pub fn set_text(&self, text: &str) {
+        let view = self.native_view_ptr();
+        if view.is_null() {
+            return;
+        }
+        unsafe {
+            let ns_text = Self::make_nsstring(text);
+            let _: () = msg_send![view, setText: ns_text];
+        }
+    }
+
+    /// Read the `text` property from the underlying view. Returns `None` if
+    /// the view is disposed or doesn't respond to `text`.
+    #[cfg(target_os = "ios")]
+    pub fn text(&self) -> Option<String> {
+        let view = self.native_view_ptr();
+        if view.is_null() {
+            return None;
+        }
+        unsafe {
+            let ns_text: *mut AnyObject = msg_send![view, text];
+            if ns_text.is_null() {
+                return None;
+            }
+            let utf8: *const i8 = msg_send![ns_text, UTF8String];
+            if utf8.is_null() {
+                return None;
+            }
+            Some(std::ffi::CStr::from_ptr(utf8).to_string_lossy().into_owned())
+        }
+    }
+
+    /// Whether the underlying view is currently the first responder
+    /// (has keyboard focus).
+    #[cfg(target_os = "ios")]
+    pub fn is_first_responder(&self) -> bool {
+        let view = self.native_view_ptr();
+        if view.is_null() {
+            return false;
+        }
+        unsafe {
+            let is_first: objc2::runtime::Bool = msg_send![view, isFirstResponder];
+            is_first.as_bool()
+        }
+    }
+
+    /// Resign first responder (dismiss the keyboard if this view has it).
+    #[cfg(target_os = "ios")]
+    pub fn resign_first_responder(&self) {
+        let view = self.native_view_ptr();
+        if view.is_null() {
+            return;
+        }
+        unsafe {
+            let _: objc2::runtime::Bool = msg_send![view, resignFirstResponder];
+        }
+    }
+
     /// Insert this view into the GPUI window's view hierarchy.
     ///
-    /// Adds the UIView as a subview of the Metal view's superview (the
-    /// view controller's view), positioned below the Metal view so that
-    /// GPUI content renders on top.
+    /// Adds the UIView as a subview of the view controller's view, above
+    /// the Metal view (whose opaque `CAMetalLayer` would otherwise cover
+    /// it every frame).
     ///
     /// This should be called once after creation, typically from the
     /// platform view element's first paint. Subsequent calls are no-ops.
@@ -306,19 +555,10 @@ impl IosPlatformView {
                         let vc: *mut AnyObject = window.view_controller_ptr();
                         let vc_view: *mut AnyObject = msg_send![vc, view];
                         if !vc_view.is_null() {
-                            // Get the Metal view
-                            let metal_view = window.metal_view_ptr();
-                            if !metal_view.is_null() {
-                                // Insert below the Metal view so GPUI renders on top
-                                let _: () = msg_send![
-                                    vc_view,
-                                    insertSubview: native_view,
-                                    belowSubview: metal_view
-                                ];
-                            } else {
-                                // Fallback: just add as subview
-                                let _: () = msg_send![vc_view, addSubview: native_view];
-                            }
+                            // The Metal view's CAMetalLayer is opaque and covers the
+                            // full window every frame, so a platform view inserted
+                            // below it would never be visible. Insert above instead.
+                            let _: () = msg_send![vc_view, addSubview: native_view];
                             log::info!(
                                 "IosPlatformView: inserted view {} into window hierarchy",
                                 self.id
@@ -367,7 +607,14 @@ impl PlatformView for IosPlatformView {
         }
         *self.bounds.lock().unwrap() = bounds;
         #[cfg(target_os = "ios")]
-        self.update_native_frame(&bounds);
+        {
+            if !self.inserted.load(Ordering::Relaxed) {
+                if let Err(e) = self.insert_into_window() {
+                    log::warn!("IosPlatformView: failed to insert into window: {e}");
+                }
+            }
+            self.update_native_frame(&bounds);
+        }
     }
 
     fn set_visible(&self, visible: bool) {
@@ -431,6 +678,10 @@ impl PlatformView for IosPlatformView {
 
     fn is_disposed(&self) -> bool {
         self.disposed.load(Ordering::Relaxed)
+    }
+
+    fn as_any(&self) -> &dyn std::any::Any {
+        self
     }
 }
 

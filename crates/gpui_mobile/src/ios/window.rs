@@ -282,6 +282,7 @@ fn register_text_input_view_class() -> &'static AnyClass {
         decl.add_ivar::<isize>(c"_keyboardType"); // UIKeyboardType
         decl.add_ivar::<isize>(c"_autocorrectionType"); // UITextAutocorrectionType
         decl.add_ivar::<isize>(c"_autocapitalizationType"); // UITextAutocapitalizationType
+        decl.add_ivar::<isize>(c"_returnKeyType"); // UIReturnKeyType
 
         // --- UIKeyInput protocol methods ---
 
@@ -346,6 +347,14 @@ fn register_text_input_view_class() -> &'static AnyClass {
         ) {
             *(*this).get_mut_ivar::<isize>("_autocapitalizationType") = val;
         }
+        #[allow(deprecated)]
+        unsafe extern "C" fn get_return_key_type(this: *mut AnyObject, _sel: Sel) -> isize {
+            *(*this).get_ivar::<isize>("_returnKeyType")
+        }
+        #[allow(deprecated)]
+        unsafe extern "C" fn set_return_key_type(this: *mut AnyObject, _sel: Sel, val: isize) {
+            *(*this).get_mut_ivar::<isize>("_returnKeyType") = val;
+        }
 
         unsafe {
             decl.add_method(
@@ -389,6 +398,14 @@ fn register_text_input_view_class() -> &'static AnyClass {
             decl.add_method(
                 sel!(setAutocapitalizationType:),
                 set_autocapitalization_type as unsafe extern "C" fn(*mut AnyObject, Sel, isize),
+            );
+            decl.add_method(
+                sel!(returnKeyType),
+                get_return_key_type as unsafe extern "C" fn(*mut AnyObject, Sel) -> isize,
+            );
+            decl.add_method(
+                sel!(setReturnKeyType:),
+                set_return_key_type as unsafe extern "C" fn(*mut AnyObject, Sel, isize),
             );
         }
 
@@ -1097,6 +1114,14 @@ impl IosWindow {
             let _: () = msg_send![self.text_input_view, setAutocorrectionType: 1_isize];
             log::info!("GPUI iOS: setAutocapitalizationType");
             let _: () = msg_send![self.text_input_view, setAutocapitalizationType: 0_isize];
+            // UIReturnKeyGo (6) for URL fields (matches Safari/typical browser
+            // UX), UIReturnKeyDefault (0) otherwise.
+            let return_key_type: isize = if matches!(keyboard_type, KeyboardType::URL) {
+                6
+            } else {
+                0
+            };
+            let _: () = msg_send![self.text_input_view, setReturnKeyType: return_key_type];
             log::info!("GPUI iOS: scheduling becomeFirstResponder");
 
             // Defer becomeFirstResponder to the next run-loop iteration.

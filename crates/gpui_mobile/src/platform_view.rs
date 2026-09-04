@@ -113,6 +113,11 @@ pub trait PlatformView: Send + Sync {
 
     /// Whether the view is currently disposed.
     fn is_disposed(&self) -> bool;
+
+    /// Downcast support, so platform-specific code (e.g. a package that
+    /// needs the raw native view pointer) can recover the concrete type
+    /// behind a `&dyn PlatformView`.
+    fn as_any(&self) -> &dyn std::any::Any;
 }
 
 /// Factory for creating platform views of a specific type.

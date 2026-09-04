@@ -3715,6 +3715,15 @@ dependencies = [
 ]
 
 [[package]]
+name = "ios_browser"
+version = "0.1.0"
+dependencies = [
+ "gpui-ce",
+ "gpui_mobile",
+ "log",
+]
+
+[[package]]
 name = "ios_counter"
 version = "0.1.0"
 dependencies = [

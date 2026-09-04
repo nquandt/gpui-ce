@@ -47,6 +47,41 @@ impl Default for WebViewSettings {
     }
 }
 
+type UrlChangedCallback = Box<dyn FnMut(&str)>;
+
+thread_local! {
+    /// Global callback invoked when the active WebView's URL changes
+    /// (in-page navigation, following a link, redirects, etc).
+    static URL_CHANGED_CALLBACK: std::cell::RefCell<Option<UrlChangedCallback>> =
+        std::cell::RefCell::new(None);
+}
+
+/// Register a callback that's invoked whenever the WebView navigates to a
+/// new URL (including in-page navigation triggered by tapping links).
+///
+/// Only one callback can be active at a time. Call with `None` to clear it.
+/// Mirrors [`crate::set_text_input_callback`]'s pattern: the platform layer
+/// calls this from a native delegate callback outside of GPUI's update
+/// cycle, so it also marks [`crate::TEXT_INPUT_DIRTY`] to force a re-render
+/// on the next frame.
+pub fn set_on_url_changed(callback: Option<UrlChangedCallback>) {
+    URL_CHANGED_CALLBACK.with(|cb| {
+        *cb.borrow_mut() = callback;
+    });
+}
+
+/// Dispatch a URL change to the registered callback.
+///
+/// Called internally by the platform layer's navigation delegate.
+pub(crate) fn dispatch_url_changed(url: &str) {
+    URL_CHANGED_CALLBACK.with(|cb| {
+        if let Some(callback) = cb.borrow_mut().as_mut() {
+            callback(url);
+        }
+    });
+    crate::TEXT_INPUT_DIRTY.store(true, std::sync::atomic::Ordering::Release);
+}
+
 /// Register the "webview" platform view factory.
 fn ensure_factory_registered() {
     let registry = PlatformViewRegistry::global();

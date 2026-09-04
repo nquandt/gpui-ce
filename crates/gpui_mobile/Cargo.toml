@@ -26,6 +26,7 @@ default = [
   "share",
   "sensors",
   "webview",
+  "text_field",
   "file_selector",
   "image_picker",
   "camera",
@@ -57,6 +58,7 @@ battery = []
 share = []
 sensors = []
 webview = []
+text_field = []
 file_selector = []
 image_picker = []
 camera = []

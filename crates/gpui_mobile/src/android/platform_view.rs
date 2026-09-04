@@ -248,6 +248,10 @@ impl PlatformView for AndroidPlatformView {
     fn is_disposed(&self) -> bool {
         self.disposed.load(Ordering::Relaxed)
     }
+
+    fn as_any(&self) -> &dyn std::any::Any {
+        self
+    }
 }
 
 /// Generic Android platform view factory.
