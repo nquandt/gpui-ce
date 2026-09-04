@@ -66,8 +66,9 @@ What's implemented:
   re-entrancy-avoidance pattern; `SelectionChanged`/`ContentChanged` →
   `inputDelegate` `selectionWillChange:`/`selectionDidChange:` and
   `textWillChange:`/`textDidChange:`); `update_ime_position` now actually
-  repositions the (still transparent, `userInteractionEnabled = NO`) text
-  input view's frame over the focused element's bounds so autocorrect
+  repositions the (still transparent; touches fall through to the Metal
+  view via the responder chain) text input view's frame over the focused
+  element's bounds so autocorrect
   bubbles, the predictive-text bar, and dictation UI are placed correctly.
 - `KeyboardType` (`lib.rs`) is unchanged and still layered on top via
   `show_keyboard_with_type` for choosing email/URL/number pads, since

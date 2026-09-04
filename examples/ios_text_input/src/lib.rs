@@ -25,12 +25,16 @@ impl Render for TextInputDemo {
     ) -> impl IntoElement {
         let single_len = self.single_line.read(cx).as_str().len();
         let multi_len = self.multi_line.read(cx).as_str().len();
+        let (safe_top, _, _, _) = gpui_mobile::safe_area_insets();
+        let keyboard_height = gpui_mobile::keyboard_height();
         div()
             .flex()
             .flex_col()
             .size_full()
             .bg(rgb(0x1e1e1e))
-            .p_6()
+            .pt(px(safe_top + 16.0))
+            .px_6()
+            .pb_6()
             .gap_4()
             .child(
                 div()
@@ -81,7 +85,7 @@ impl Render for TextInputDemo {
                     .text_color(rgb(0x9aa0a6))
                     .text_size(px(12.0))
                     .child(format!(
-                        "single-line: {single_len} chars, multi-line: {multi_len} chars"
+                        "single-line: {single_len} chars, multi-line: {multi_len} chars, keyboard: {keyboard_height:.0}pt"
                     )),
             )
     }

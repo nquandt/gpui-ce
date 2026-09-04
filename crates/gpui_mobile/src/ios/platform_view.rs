@@ -10,9 +10,12 @@ use crate::platform_view::{
 };
 use std::sync::atomic::{AtomicBool, Ordering};
 
-#[cfg(target_os = "ios")]
-use objc2::runtime::{AnyClass, AnyObject, ClassBuilder, Sel};
-use objc2::{class, msg_send, sel};
+use objc2::runtime::AnyObject;
+#[cfg(any(feature = "text_field", feature = "webview"))]
+use objc2::runtime::{AnyClass, ClassBuilder, Sel};
+#[cfg(any(feature = "text_field", feature = "webview"))]
+use objc2::sel;
+use objc2::{class, msg_send};
 
 #[cfg(target_os = "ios")]
 use super::cg_types::ObjcCGRect;
@@ -79,6 +82,8 @@ impl IosPlatformView {
         bounds: &PlatformViewBounds,
         params: &PlatformViewParams,
     ) -> Result<*mut AnyObject, String> {
+        // Only the feature-gated view types read `params`.
+        let _ = params;
         unsafe {
             let frame = ObjcCGRect::new(
                 bounds.x as f64,

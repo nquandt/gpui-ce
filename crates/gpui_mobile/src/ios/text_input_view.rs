@@ -2,11 +2,14 @@
 //! input system to GPUI's `PlatformInputHandler` / `EntityInputHandler`.
 //!
 //! This view is an invisible (alpha ~0) subview positioned over the focused
-//! text element. It never receives touches (`userInteractionEnabled = NO`);
-//! it exists purely so `becomeFirstResponder` gives UIKit a first responder
-//! that conforms to `UITextInput`, which is what makes the software
-//! keyboard, autocorrect, predictive text, selection handles, and IME
-//! composition talk to us instead of being silently unavailable.
+//! text element. It keeps `userInteractionEnabled` on (UIKit refuses to make
+//! a non-interactive view first responder) but does not override any touch
+//! handling, so `UIResponder`'s default implementation forwards touches up
+//! the responder chain to the Metal view underneath. It exists purely so
+//! `becomeFirstResponder` gives UIKit a first responder that conforms to
+//! `UITextInput`, which is what makes the software keyboard, autocorrect,
+//! predictive text, and IME composition talk to us instead of being
+//! silently unavailable.
 //!
 //! All offsets exchanged with `PlatformInputHandler` are UTF-16 code unit
 //! offsets (see `crates/gpui/src/platform.rs`), matching what `NSString`
