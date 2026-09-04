@@ -126,9 +126,11 @@ unsafe fn user_defaults() -> *mut AnyObject {
 use crate::ios::util::nsstring;
 
 unsafe fn nsstring_to_string(ns: *mut AnyObject) -> String {
-    let utf8: *const i8 = msg_send![ns, UTF8String];
-    if utf8.is_null() {
-        return String::new();
+    unsafe {
+        let utf8: *const i8 = msg_send![ns, UTF8String];
+        if utf8.is_null() {
+            return String::new();
+        }
+        CStr::from_ptr(utf8).to_string_lossy().into_owned()
     }
-    CStr::from_ptr(utf8).to_string_lossy().into_owned()
 }

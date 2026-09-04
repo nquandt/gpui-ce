@@ -4,10 +4,10 @@ use objc2::{class, msg_send, sel};
 use std::sync::{Mutex, Once, mpsc};
 
 #[link(name = "UIKit", kind = "framework")]
-extern "C" {}
+unsafe extern "C" {}
 
 #[link(name = "UniformTypeIdentifiers", kind = "framework")]
-extern "C" {}
+unsafe extern "C" {}
 
 // ── Result channel ──────────────────────────────────────────────────────────
 
@@ -60,119 +60,135 @@ unsafe extern "C" fn did_pick_documents(
     _controller: *mut AnyObject,
     urls: *mut AnyObject,
 ) {
-    let count: usize = msg_send![urls, count];
-    let mut paths = Vec::with_capacity(count);
-    for i in 0..count {
-        let url: *mut AnyObject = msg_send![urls, objectAtIndex: i];
-        let abs_string: *mut AnyObject = msg_send![url, absoluteString];
-        if !abs_string.is_null() {
-            let cstr: *const std::ffi::c_char = msg_send![abs_string, UTF8String];
-            if !cstr.is_null() {
-                paths.push(
-                    std::ffi::CStr::from_ptr(cstr)
-                        .to_string_lossy()
-                        .into_owned(),
-                );
+    unsafe {
+        let count: usize = msg_send![urls, count];
+        let mut paths = Vec::with_capacity(count);
+        for i in 0..count {
+            let url: *mut AnyObject = msg_send![urls, objectAtIndex: i];
+            let abs_string: *mut AnyObject = msg_send![url, absoluteString];
+            if !abs_string.is_null() {
+                let cstr: *const std::ffi::c_char = msg_send![abs_string, UTF8String];
+                if !cstr.is_null() {
+                    paths.push(
+                        std::ffi::CStr::from_ptr(cstr)
+                            .to_string_lossy()
+                            .into_owned(),
+                    );
+                }
             }
         }
+        // Dismiss the picker
+        let _: () = msg_send![_controller, dismissViewControllerAnimated: true, completion: std::ptr::null::<AnyObject>()];
+        send_result(paths);
     }
-    // Dismiss the picker
-    let _: () = msg_send![_controller, dismissViewControllerAnimated: true, completion: std::ptr::null::<AnyObject>()];
-    send_result(paths);
 }
 
 unsafe extern "C" fn did_cancel(_this: *mut AnyObject, _sel: Sel, controller: *mut AnyObject) {
-    let _: () = msg_send![controller, dismissViewControllerAnimated: true, completion: std::ptr::null::<AnyObject>()];
-    send_result(vec![]);
+    unsafe {
+        let _: () = msg_send![controller, dismissViewControllerAnimated: true, completion: std::ptr::null::<AnyObject>()];
+        send_result(vec![]);
+    }
 }
 
 // ── UTType helpers ──────────────────────────────────────────────────────────
 
 /// Convert a TypeGroup into an NSArray of UTType objects.
 unsafe fn type_group_to_uttypes(group: &TypeGroup) -> *mut AnyObject {
-    let mut types: Vec<*mut AnyObject> = Vec::new();
+    unsafe {
+        let mut types: Vec<*mut AnyObject> = Vec::new();
 
-    // Prefer explicit UTIs
-    for uti in &group.utis {
-        let ut = uttype_from_identifier(uti);
-        if !ut.is_null() {
-            types.push(ut);
-        }
-    }
-
-    // Fall back to extensions
-    if types.is_empty() {
-        for ext in &group.extensions {
-            let ut = uttype_from_extension(ext);
+        // Prefer explicit UTIs
+        for uti in &group.utis {
+            let ut = uttype_from_identifier(uti);
             if !ut.is_null() {
                 types.push(ut);
             }
         }
-    }
 
-    // Fall back to MIME types
-    if types.is_empty() {
-        for mime in &group.mime_types {
-            let ut = uttype_from_mime(mime);
+        // Fall back to extensions
+        if types.is_empty() {
+            for ext in &group.extensions {
+                let ut = uttype_from_extension(ext);
+                if !ut.is_null() {
+                    types.push(ut);
+                }
+            }
+        }
+
+        // Fall back to MIME types
+        if types.is_empty() {
+            for mime in &group.mime_types {
+                let ut = uttype_from_mime(mime);
+                if !ut.is_null() {
+                    types.push(ut);
+                }
+            }
+        }
+
+        if types.is_empty() {
+            // Accept all file types
+            let ut = uttype_from_identifier("public.item");
             if !ut.is_null() {
                 types.push(ut);
             }
         }
-    }
 
-    if types.is_empty() {
-        // Accept all file types
-        let ut = uttype_from_identifier("public.item");
-        if !ut.is_null() {
-            types.push(ut);
-        }
+        nsarray_from_objects(&types)
     }
-
-    nsarray_from_objects(&types)
 }
 
 unsafe fn uttype_from_identifier(ident: &str) -> *mut AnyObject {
-    let ns_ident = nsstring(ident);
-    msg_send![class!(UTType), typeWithIdentifier: ns_ident]
+    unsafe {
+        let ns_ident = nsstring(ident);
+        msg_send![class!(UTType), typeWithIdentifier: ns_ident]
+    }
 }
 
 unsafe fn uttype_from_extension(ext: &str) -> *mut AnyObject {
-    let ns_ext = nsstring(ext);
-    msg_send![class!(UTType), typeWithFilenameExtension: ns_ext]
+    unsafe {
+        let ns_ext = nsstring(ext);
+        msg_send![class!(UTType), typeWithFilenameExtension: ns_ext]
+    }
 }
 
 unsafe fn uttype_from_mime(mime: &str) -> *mut AnyObject {
-    let ns_mime = nsstring(mime);
-    msg_send![class!(UTType), typeWithMIMEType: ns_mime]
+    unsafe {
+        let ns_mime = nsstring(mime);
+        msg_send![class!(UTType), typeWithMIMEType: ns_mime]
+    }
 }
 
 use crate::ios::util::nsstring;
 
 unsafe fn nsarray_from_objects(objects: &[*mut AnyObject]) -> *mut AnyObject {
-    msg_send![class!(NSArray),
-        arrayWithObjects: objects.as_ptr(),
-        count: objects.len()
-    ]
+    unsafe {
+        msg_send![class!(NSArray),
+            arrayWithObjects: objects.as_ptr(),
+            count: objects.len()
+        ]
+    }
 }
 
 // ── Presentation helper ─────────────────────────────────────────────────────
 
 unsafe fn present_picker(picker: *mut AnyObject) -> Result<(), String> {
-    let app: *mut AnyObject = msg_send![class!(UIApplication), sharedApplication];
-    let key_window: *mut AnyObject = msg_send![app, keyWindow];
-    if key_window.is_null() {
-        return Err("No key window available".into());
+    unsafe {
+        let app: *mut AnyObject = msg_send![class!(UIApplication), sharedApplication];
+        let key_window: *mut AnyObject = msg_send![app, keyWindow];
+        if key_window.is_null() {
+            return Err("No key window available".into());
+        }
+        let root_vc: *mut AnyObject = msg_send![key_window, rootViewController];
+        if root_vc.is_null() {
+            return Err("No root view controller".into());
+        }
+        let _: () = msg_send![root_vc,
+            presentViewController: picker,
+            animated: true,
+            completion: std::ptr::null::<AnyObject>()
+        ];
+        Ok(())
     }
-    let root_vc: *mut AnyObject = msg_send![key_window, rootViewController];
-    if root_vc.is_null() {
-        return Err("No root view controller".into());
-    }
-    let _: () = msg_send![root_vc,
-        presentViewController: picker,
-        animated: true,
-        completion: std::ptr::null::<AnyObject>()
-    ];
-    Ok(())
 }
 
 fn url_to_selected_file(url_string: &str) -> SelectedFile {

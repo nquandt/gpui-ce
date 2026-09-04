@@ -4,13 +4,13 @@ use objc2::{class, msg_send, sel};
 use std::sync::{Mutex, Once, mpsc};
 
 #[link(name = "PhotosUI", kind = "framework")]
-extern "C" {}
+unsafe extern "C" {}
 
 #[link(name = "Photos", kind = "framework")]
-extern "C" {}
+unsafe extern "C" {}
 
 #[link(name = "UIKit", kind = "framework")]
-extern "C" {}
+unsafe extern "C" {}
 
 // ── Result channel ──────────────────────────────────────────────────────────
 
@@ -162,47 +162,49 @@ unsafe extern "C" fn uipicker_did_finish(
     controller: *mut AnyObject,
     info: *mut AnyObject,
 ) {
-    let _: () = msg_send![controller, dismissViewControllerAnimated: true, completion: std::ptr::null::<AnyObject>()];
+    unsafe {
+        let _: () = msg_send![controller, dismissViewControllerAnimated: true, completion: std::ptr::null::<AnyObject>()];
 
-    // Try to get the image URL first (for videos or saved photos)
-    let media_url_key = nsstring("UIImagePickerControllerMediaURL");
-    let media_url: *mut AnyObject = msg_send![info, objectForKey: media_url_key];
+        // Try to get the image URL first (for videos or saved photos)
+        let media_url_key = nsstring("UIImagePickerControllerMediaURL");
+        let media_url: *mut AnyObject = msg_send![info, objectForKey: media_url_key];
 
-    if !media_url.is_null() {
-        let abs_string: *mut AnyObject = msg_send![media_url, absoluteString];
-        let cstr: *const std::ffi::c_char = msg_send![abs_string, UTF8String];
-        if !cstr.is_null() {
-            let path = std::ffi::CStr::from_ptr(cstr)
-                .to_string_lossy()
-                .into_owned();
-            let path = path.strip_prefix("file://").unwrap_or(&path).to_string();
-            send_result(vec![path]);
-            return;
-        }
-    }
-
-    // Fall back to getting the UIImage and saving it
-    let image_key = nsstring("UIImagePickerControllerOriginalImage");
-    let image: *mut AnyObject = msg_send![info, objectForKey: image_key];
-
-    if !image.is_null() {
-        // Convert to JPEG data
-        // Use UIImageJPEGRepresentation C function
-        let jpeg_data = uiimage_jpeg_representation(image, 0.9);
-        if !jpeg_data.is_null() {
-            let uuid_str = uuid::Uuid::new_v4().to_string();
-            let file_name = format!("captured_{}.jpg", uuid_str);
-            let file_path = std::env::temp_dir().join(file_name);
-            let ns_path = nsstring(&file_path.to_string_lossy());
-            let wrote: Bool = msg_send![jpeg_data, writeToFile: ns_path, atomically: true];
-            if wrote.as_bool() {
-                send_result(vec![file_path.to_string_lossy().into_owned()]);
+        if !media_url.is_null() {
+            let abs_string: *mut AnyObject = msg_send![media_url, absoluteString];
+            let cstr: *const std::ffi::c_char = msg_send![abs_string, UTF8String];
+            if !cstr.is_null() {
+                let path = std::ffi::CStr::from_ptr(cstr)
+                    .to_string_lossy()
+                    .into_owned();
+                let path = path.strip_prefix("file://").unwrap_or(&path).to_string();
+                send_result(vec![path]);
                 return;
             }
         }
-    }
 
-    send_result(vec![]);
+        // Fall back to getting the UIImage and saving it
+        let image_key = nsstring("UIImagePickerControllerOriginalImage");
+        let image: *mut AnyObject = msg_send![info, objectForKey: image_key];
+
+        if !image.is_null() {
+            // Convert to JPEG data
+            // Use UIImageJPEGRepresentation C function
+            let jpeg_data = uiimage_jpeg_representation(image, 0.9);
+            if !jpeg_data.is_null() {
+                let uuid_str = uuid::Uuid::new_v4().to_string();
+                let file_name = format!("captured_{}.jpg", uuid_str);
+                let file_path = std::env::temp_dir().join(file_name);
+                let ns_path = nsstring(&file_path.to_string_lossy());
+                let wrote: Bool = msg_send![jpeg_data, writeToFile: ns_path, atomically: true];
+                if wrote.as_bool() {
+                    send_result(vec![file_path.to_string_lossy().into_owned()]);
+                    return;
+                }
+            }
+        }
+
+        send_result(vec![]);
+    }
 }
 
 unsafe extern "C" fn uipicker_did_cancel(
@@ -210,17 +212,19 @@ unsafe extern "C" fn uipicker_did_cancel(
     _sel: Sel,
     controller: *mut AnyObject,
 ) {
-    let _: () = msg_send![controller, dismissViewControllerAnimated: true, completion: std::ptr::null::<AnyObject>()];
-    send_result(vec![]);
+    unsafe {
+        let _: () = msg_send![controller, dismissViewControllerAnimated: true, completion: std::ptr::null::<AnyObject>()];
+        send_result(vec![]);
+    }
 }
 
 // UIImageJPEGRepresentation is a C function, not an ObjC method
-extern "C" {
+unsafe extern "C" {
     fn UIImageJPEGRepresentation(image: *mut AnyObject, quality: f64) -> *mut AnyObject;
 }
 
 unsafe fn uiimage_jpeg_representation(image: *mut AnyObject, quality: f64) -> *mut AnyObject {
-    UIImageJPEGRepresentation(image, quality)
+    unsafe { UIImageJPEGRepresentation(image, quality) }
 }
 
 // ── Helpers ─────────────────────────────────────────────────────────────────

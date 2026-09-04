@@ -288,7 +288,7 @@ fn cmtime_to_ms(time: CMTime) -> u64 {
 }
 
 unsafe fn make_nsstring(s: &str) -> *mut AnyObject {
-    crate::ios::util::nsstring(s)
+    unsafe { crate::ios::util::nsstring(s) }
 }
 
 /// Wait (up to 5 seconds) for the current AVPlayerItem to reach ReadyToPlay status.
