@@ -275,6 +275,13 @@ impl PlatformWebView for WryWebView {
         *self.navigation_handler.borrow_mut() = handler;
     }
 
+    fn is_url_trusted(&self, url: &str) -> bool {
+        match self.navigation_handler.borrow_mut().as_mut() {
+            Some(policy) => policy(url),
+            None => true,
+        }
+    }
+
     fn as_any(&self) -> &dyn std::any::Any {
         self
     }

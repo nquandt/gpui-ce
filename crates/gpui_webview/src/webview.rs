@@ -129,7 +129,17 @@ impl WebView {
         self
     }
 
-    /// Callback fired when navigation is attempted. Return false to block.
+    /// Callback fired when navigation is attempted, and reused as the trust
+    /// check that gates IPC dispatch (see [`WebView::on_ipc_message`]).
+    /// Return false to block the navigation, or drop an IPC message from a
+    /// page whose URL fails the check.
+    ///
+    /// Without this callback the webview behaves like a classic, open
+    /// browser: any URL may load, and any loaded page may call
+    /// `window.invoke`. Set it to scope the webview into an embedded-app
+    /// mode where only approved URLs (e.g. your own bundled origin) can
+    /// navigate or talk to native code, the way a Tauri app scopes its IPC
+    /// bridge to its own origin.
     pub fn on_navigation(mut self, callback: impl FnMut(&str) -> bool + 'static) -> Self {
         self.on_navigation = Some(Box::new(callback));
         self
@@ -295,10 +305,20 @@ impl Element for WebView {
                 // that fail to decode are silently dropped; the page-side
                 // promise will simply never resolve, which surfaces as a
                 // hang during development rather than a crash at runtime.
+                //
+                // Messages are always drained, even from an untrusted page,
+                // so a page that gets navigated away can't build up a queue
+                // of commands that fire the moment a trusted URL loads.
+                let pending_ipc = webview_state.platform_webview.take_ipc_messages();
                 if let Some(ref mut callback) = self.on_ipc_message {
-                    for message in webview_state.platform_webview.take_ipc_messages() {
-                        if let Some(request) = IpcRequest::parse(&message) {
-                            callback(&request, &handle, window, cx);
+                    let is_trusted = webview_state
+                        .platform_webview
+                        .is_url_trusted(&webview_state.last_known_url);
+                    if is_trusted {
+                        for message in pending_ipc {
+                            if let Some(request) = IpcRequest::parse(&message) {
+                                callback(&request, &handle, window, cx);
+                            }
                         }
                     }
                 }
