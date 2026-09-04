@@ -31,7 +31,7 @@
 //! | Module | Description |
 //! |--------|-------------|
 //! | [`scaffold`] | Top-level visual layout: top bar, body, bottom bar, FAB, drawer |
-//! | [`surface`] | Elevated card base with shadow simulation |
+//! | [`mod@surface`] | Elevated card base with shadow simulation |
 //!
 //! ### Navigation
 //!
@@ -56,7 +56,7 @@
 //! | Module | Description |
 //! |--------|-------------|
 //! | [`controls`] | Checkbox, Radio, RadioGroup, Switch, Slider, RangeSlider |
-//! | [`text_fields`] | Outlined, filled, and error-state text fields |
+//! | [`mod@text_fields`] | Outlined, filled, and error-state text fields |
 //!
 //! ### Containers & Content
 //!
@@ -64,23 +64,23 @@
 //! |--------|-------------|
 //! | [`card`] | Card (filled, elevated, outlined) and CardBuilder |
 //! | [`list_tile`] | ListTile, Divider, Badge, Tooltip, Chip variants, ExpansionTile |
-//! | [`hero_card`] | Gradient hero card for showcases |
+//! | [`mod@hero_card`] | Gradient hero card for showcases |
 //!
 //! ### Feedback & Overlays
 //!
 //! | Module | Description |
 //! |--------|-------------|
-//! | [`snackbar`] | Single-line and multi-line snackbar banners |
-//! | [`bottom_sheet`] | Modal bottom sheet with drag handle |
+//! | [`mod@snackbar`] | Single-line and multi-line snackbar banners |
+//! | [`mod@bottom_sheet`] | Modal bottom sheet with drag handle |
 //!
 //! ### Legacy Compatibility
 //!
 //! | Module | Description |
 //! |--------|-------------|
-//! | [`buttons`] | Legacy free-function button showcase (deprecated, use [`button`]) |
-//! | [`fabs`] | Legacy free-function FAB showcase (deprecated, use [`fab`]) |
-//! | [`chips`] | Legacy free-function chip showcase (deprecated, use [`list_tile::Chip`]) |
-//! | [`cards`] | Legacy free-function card showcase (deprecated, use [`card`]) |
+//! | [`mod@buttons`] | Legacy free-function button showcase (deprecated, use [`button`]) |
+//! | [`mod@fabs`] | Legacy free-function FAB showcase (deprecated, use [`fab`]) |
+//! | [`mod@chips`] | Legacy free-function chip showcase (deprecated, use [`list_tile::Chip`]) |
+//! | [`mod@cards`] | Legacy free-function card showcase (deprecated, use [`card`]) |
 //!
 //! ## Quick Start
 //!

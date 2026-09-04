@@ -43,8 +43,9 @@ pub struct VideoInfo {
 /// integer ID. Resources are released automatically on [`Drop`].
 ///
 /// The video surface is embedded via the platform view system. Call
-/// [`show_surface`] to create the native view, or use [`platform_view_handle`]
-/// to embed it in a GPUI element via `platform_view_element()`.
+/// [`show_surface`](Self::show_surface) to create the native view, or use
+/// [`platform_view_handle`](Self::platform_view_handle) to embed it in a
+/// GPUI element via `platform_view_element()`.
 pub struct VideoPlayer {
     id: u32,
     /// Platform view handle for the video surface (set when surface is showing).
@@ -315,8 +316,9 @@ impl VideoPlayer {
     /// platform view registry. On subsequent calls, updates the bounds of the
     /// existing view without recreating it.
     ///
-    /// Use [`platform_view_handle`] to get an `Arc<PlatformViewHandle>` for
-    /// embedding in a GPUI element via `platform_view_element()`.
+    /// Use [`platform_view_handle`](Self::platform_view_handle) to get an
+    /// `Arc<PlatformViewHandle>` for embedding in a GPUI element via
+    /// `platform_view_element()`.
     pub fn show_surface(&mut self, x: f32, y: f32, width: f32, height: f32) -> Result<(), String> {
         let bounds = PlatformViewBounds {
             x,

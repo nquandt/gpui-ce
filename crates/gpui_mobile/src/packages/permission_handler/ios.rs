@@ -4,34 +4,34 @@ use objc2::{class, msg_send};
 use std::sync::mpsc;
 
 #[link(name = "AVFoundation", kind = "framework")]
-extern "C" {}
+unsafe extern "C" {}
 
 #[link(name = "CoreLocation", kind = "framework")]
-extern "C" {}
+unsafe extern "C" {}
 
 #[link(name = "Photos", kind = "framework")]
-extern "C" {}
+unsafe extern "C" {}
 
 #[link(name = "Contacts", kind = "framework")]
-extern "C" {}
+unsafe extern "C" {}
 
 #[link(name = "EventKit", kind = "framework")]
-extern "C" {}
+unsafe extern "C" {}
 
 #[link(name = "UserNotifications", kind = "framework")]
-extern "C" {}
+unsafe extern "C" {}
 
 #[link(name = "CoreBluetooth", kind = "framework")]
-extern "C" {}
+unsafe extern "C" {}
 
 #[link(name = "CoreMotion", kind = "framework")]
-extern "C" {}
+unsafe extern "C" {}
 
 #[link(name = "Speech", kind = "framework")]
-extern "C" {}
+unsafe extern "C" {}
 
 #[link(name = "AppTrackingTransparency", kind = "framework")]
-extern "C" {}
+unsafe extern "C" {}
 
 // ── Helpers ─────────────────────────────────────────────────────────────────
 
@@ -71,9 +71,12 @@ pub fn check_permission(permission: Permission) -> Result<PermissionStatus, Stri
 }
 
 unsafe fn check_av_authorization(media_type: &str) -> Result<PermissionStatus, String> {
-    let ns_media = nsstring(media_type);
-    let status: i64 = msg_send![class!(AVCaptureDevice), authorizationStatusForMediaType: ns_media];
-    Ok(av_status_to_permission(status))
+    unsafe {
+        let ns_media = nsstring(media_type);
+        let status: i64 =
+            msg_send![class!(AVCaptureDevice), authorizationStatusForMediaType: ns_media];
+        Ok(av_status_to_permission(status))
+    }
 }
 
 fn av_status_to_permission(status: i64) -> PermissionStatus {
@@ -240,25 +243,27 @@ pub fn request_permission(permission: Permission) -> Result<PermissionStatus, St
 }
 
 unsafe fn request_av_authorization(media_type: &str) -> Result<PermissionStatus, String> {
-    let (tx, rx) = mpsc::channel();
-    let ns_media = nsstring(media_type);
+    unsafe {
+        let (tx, rx) = mpsc::channel();
+        let ns_media = nsstring(media_type);
 
-    let block = block2::RcBlock::new(move |granted: Bool| {
-        let status = if granted.as_bool() {
-            PermissionStatus::Granted
-        } else {
-            PermissionStatus::PermanentlyDenied
-        };
-        let _ = tx.send(status);
-    });
+        let block = block2::RcBlock::new(move |granted: Bool| {
+            let status = if granted.as_bool() {
+                PermissionStatus::Granted
+            } else {
+                PermissionStatus::PermanentlyDenied
+            };
+            let _ = tx.send(status);
+        });
 
-    let _: () = msg_send![class!(AVCaptureDevice),
-        requestAccessForMediaType: ns_media,
-        completionHandler: &*block
-    ];
+        let _: () = msg_send![class!(AVCaptureDevice),
+            requestAccessForMediaType: ns_media,
+            completionHandler: &*block
+        ];
 
-    rx.recv()
-        .map_err(|_| "AV authorization request failed".to_string())
+        rx.recv()
+            .map_err(|_| "AV authorization request failed".to_string())
+    }
 }
 
 unsafe fn request_photos_authorization() -> Result<PermissionStatus, String> {
@@ -286,20 +291,24 @@ unsafe fn request_photos_authorization() -> Result<PermissionStatus, String> {
 }
 
 unsafe fn request_location_when_in_use() -> Result<PermissionStatus, String> {
-    let mgr: *mut AnyObject = msg_send![class!(CLLocationManager), alloc];
-    let mgr: *mut AnyObject = msg_send![mgr, init];
-    let _: () = msg_send![mgr, requestWhenInUseAuthorization];
-    // Location authorization is async via delegate; return current status after a brief wait
-    std::thread::sleep(std::time::Duration::from_millis(500));
-    check_location_authorization()
+    unsafe {
+        let mgr: *mut AnyObject = msg_send![class!(CLLocationManager), alloc];
+        let mgr: *mut AnyObject = msg_send![mgr, init];
+        let _: () = msg_send![mgr, requestWhenInUseAuthorization];
+        // Location authorization is async via delegate; return current status after a brief wait
+        std::thread::sleep(std::time::Duration::from_millis(500));
+        check_location_authorization()
+    }
 }
 
 unsafe fn request_location_always() -> Result<PermissionStatus, String> {
-    let mgr: *mut AnyObject = msg_send![class!(CLLocationManager), alloc];
-    let mgr: *mut AnyObject = msg_send![mgr, init];
-    let _: () = msg_send![mgr, requestAlwaysAuthorization];
-    std::thread::sleep(std::time::Duration::from_millis(500));
-    check_location_authorization()
+    unsafe {
+        let mgr: *mut AnyObject = msg_send![class!(CLLocationManager), alloc];
+        let mgr: *mut AnyObject = msg_send![mgr, init];
+        let _: () = msg_send![mgr, requestAlwaysAuthorization];
+        std::thread::sleep(std::time::Duration::from_millis(500));
+        check_location_authorization()
+    }
 }
 
 unsafe fn request_contacts_authorization() -> Result<PermissionStatus, String> {

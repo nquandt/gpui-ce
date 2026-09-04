@@ -108,11 +108,20 @@ What's implemented:
 ## Other known gaps (lower priority, noted in code)
 
 - `packages/webview/ios.rs`: `evaluate_javascript`, `go_back`, `reload`,
-  `stop_loading` are stubs — the `WebViewHandle` only holds a
-  `PlatformViewHandle`, not a way to reach the raw `WKWebView*`. (Now that
-  `packages::text_field` demonstrates the
-  `handle.inner().as_any().downcast_ref::<IosPlatformView>()` pattern for
-  getting back to the raw native view, wiring these up is mostly repeating
-  that pattern plus adding the actual `WKWebView` calls — see
-  `IosPlatformView::set_text`/`text`/`is_first_responder` in
-  `ios/platform_view.rs` for the shape.)
+  `stop_loading` are now wired up to the real `WKWebView*` behind the
+  `WebViewHandle`, using the same
+  `handle.platform_handle.as_ref()?.inner().as_any().downcast_ref::<IosPlatformView>()`
+  pattern `packages::text_field` uses to reach its native `UITextField`
+  (see `native_webview_ptr()` in `packages/webview/ios.rs`). Specifically:
+  `evaluate_javascript` calls `evaluateJavaScript:completionHandler:` with
+  a `block2::RcBlock` that logs (but does not propagate) a JS-side error;
+  `go_back`/checks `canGoBack` before calling `goBack`; `reload` calls
+  `reload`; `stop_loading` calls `stopLoading`. All four return
+  `Err("No active WebView")` if the platform view has been disposed or
+  isn't an `IosPlatformView` (e.g. called before the view is inserted).
+  Not yet done: a `go_forward` entry point (Android's `webview/android.rs`
+  helper class has no `goForward` counterpart either, so adding one means
+  touching both platforms' helper surface, not just iOS), and
+  `evaluate_javascript`'s result value (the completion handler currently
+  discards the JS expression's return value rather than surfacing it to
+  the caller).
