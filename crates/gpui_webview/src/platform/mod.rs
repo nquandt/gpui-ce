@@ -28,6 +28,8 @@ pub(crate) trait PlatformWebView {
     /// concrete backend (e.g. `wry::WebView`) for APIs this crate doesn't
     /// wrap yet.
     fn as_any(&self) -> &dyn std::any::Any;
+    /// Drain and return IPC messages sent from JS via `window.ipc.postMessage`.
+    fn take_ipc_messages(&self) -> Vec<String>;
 }
 
 #[cfg(feature = "webview")]

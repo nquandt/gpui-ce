@@ -70,6 +70,7 @@ pub struct WebView {
     on_page_load: Option<Box<dyn FnMut(&str)>>,
     on_url_changed: Option<Box<dyn FnMut(&str, &mut Window, &mut App)>>,
     on_create_handle: Option<Box<dyn FnMut(WebViewHandle, &mut Window, &mut App)>>,
+    on_ipc_message: Option<Box<dyn FnMut(&str, &WebViewHandle, &mut Window, &mut App)>>,
     style: StyleRefinement,
 }
 
@@ -83,6 +84,7 @@ impl WebView {
             on_page_load: None,
             on_url_changed: None,
             on_create_handle: None,
+            on_ipc_message: None,
             style: StyleRefinement::default(),
         }
     }
@@ -157,6 +159,21 @@ impl WebView {
         callback: impl FnMut(WebViewHandle, &mut Window, &mut App) + 'static,
     ) -> Self {
         self.on_create_handle = Some(Box::new(callback));
+        self
+    }
+
+    /// Callback fired for each message the page sends via `window.invoke(cmd, payload)`.
+    ///
+    /// The raw JSON request body (`{"id", "cmd", "payload"}`) is passed
+    /// through. Use the given [`WebViewHandle`] to evaluate JavaScript that
+    /// calls `window.__gpuiIpcResolve(id, ok, result)` and settle the
+    /// matching promise on the page, the way a Tauri command handler
+    /// replies to `invoke()`.
+    pub fn on_ipc_message(
+        mut self,
+        callback: impl FnMut(&str, &WebViewHandle, &mut Window, &mut App) + 'static,
+    ) -> Self {
+        self.on_ipc_message = Some(Box::new(callback));
         self
     }
 
@@ -273,10 +290,13 @@ impl Element for WebView {
                     callback(handle.clone(), window, cx);
                 }
 
-                // NOTE(ipc): a future IPC bridge would drain queued messages
-                // from the platform webview here (each prepaint, same as the
-                // URL-change poll above) and dispatch them to a consumer
-                // `on_ipc_message` callback, replying through `handle`.
+                // Dispatch any `window.invoke()` calls the page made since
+                // the last frame to the on_ipc_message callback.
+                if let Some(ref mut callback) = self.on_ipc_message {
+                    for message in webview_state.platform_webview.take_ipc_messages() {
+                        callback(&message, &handle, window, cx);
+                    }
+                }
 
                 (Some(handle), Some(webview_state))
             },

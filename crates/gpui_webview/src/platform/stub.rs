@@ -37,6 +37,9 @@ impl PlatformWebView for StubWebView {
     fn as_any(&self) -> &dyn std::any::Any {
         self
     }
+    fn take_ipc_messages(&self) -> Vec<String> {
+        Vec::new()
+    }
 }
 
 pub(crate) fn create_platform_webview(

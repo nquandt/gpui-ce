@@ -24,7 +24,13 @@ wry = { workspace = true, optional = true }
 [dev-dependencies]
 gpui_platform = { workspace = true, features = ["wgpu", "font-kit"] }
 gpui_elements = { path = "../gpui_elements/", package = "gpui_ce_elements" }
+serde.workspace = true
+serde_json.workspace = true
 
 [[example]]
 name = "browser"
 path = "examples/browser.rs"
+
+[[example]]
+name = "commands"
+path = "examples/commands.rs"
