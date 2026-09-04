@@ -15,6 +15,7 @@ pub mod ffi;
 mod platform;
 pub mod platform_view;
 mod text_input;
+mod text_input_view;
 mod text_system;
 pub mod util;
 mod window;

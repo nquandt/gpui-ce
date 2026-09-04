@@ -22,7 +22,7 @@ use gpui::{
 };
 use gpui_wgpu::{GpuContext, WgpuContext, WgpuRenderer, WgpuSurfaceConfig};
 use objc2::encode::{Encode, Encoding, RefEncode};
-use objc2::runtime::{AnyClass, AnyObject, Bool, ClassBuilder, Sel};
+use objc2::runtime::{AnyClass, AnyObject, ClassBuilder, Sel};
 use objc2::{class, msg_send, sel};
 
 use super::cg_types::ObjcCGRect;
@@ -73,7 +73,6 @@ impl HasDisplayHandle for RawIosWindow {
 
 static METAL_VIEW_CLASS_REGISTERED: std::sync::Once = std::sync::Once::new();
 static VC_CLASS_REGISTERED: std::sync::Once = std::sync::Once::new();
-static TEXT_INPUT_VIEW_CLASS_REGISTERED: std::sync::Once = std::sync::Once::new();
 
 /// Global storage for the current status bar style.
 /// 0 = default (dark content), 1 = light content.
@@ -252,169 +251,6 @@ fn register_metal_view_class() -> &'static AnyClass {
     class!(GPUIMetalView)
 }
 
-/// Register a custom UIView subclass that implements UIKeyInput protocol.
-///
-/// iOS requires the first-responder view to conform to `UIKeyInput` in order
-/// for the software keyboard to actually route typed characters back to the
-/// app.  Without this, `becomeFirstResponder` silently fails and no keyboard
-/// appears.
-///
-/// The three required methods:
-/// - `hasText` → always returns YES (simplifies things; no harm)
-/// - `insertText:` → forwards the text to `IosWindow::handle_text_input`
-/// - `deleteBackward` → dispatches a backspace via `crate::dispatch_text_input`
-fn register_text_input_view_class() -> &'static AnyClass {
-    TEXT_INPUT_VIEW_CLASS_REGISTERED.call_once(|| {
-        let superclass = class!(UIView);
-        let mut decl = ClassBuilder::new(c"GPUITextInputView", superclass).unwrap();
-
-        // Declare protocol conformance so iOS knows this view can receive
-        // keyboard text input.
-        if let Some(protocol) = objc2::runtime::AnyProtocol::get(c"UIKeyInput") {
-            decl.add_protocol(protocol);
-        }
-
-        // Store the IosWindow pointer so callbacks can reach the Rust window.
-        decl.add_ivar::<*mut std::ffi::c_void>(c"gpui_window_ptr");
-
-        // UITextInputTraits property storage — UIView doesn't provide these,
-        // but iOS reads them from the first responder to configure the keyboard.
-        decl.add_ivar::<isize>(c"_keyboardType"); // UIKeyboardType
-        decl.add_ivar::<isize>(c"_autocorrectionType"); // UITextAutocorrectionType
-        decl.add_ivar::<isize>(c"_autocapitalizationType"); // UITextAutocapitalizationType
-        decl.add_ivar::<isize>(c"_returnKeyType"); // UIReturnKeyType
-
-        // --- UIKeyInput protocol methods ---
-
-        // Bool hasText
-        unsafe extern "C" fn has_text(_this: *mut AnyObject, _sel: Sel) -> Bool {
-            Bool::YES
-        }
-
-        // void insertText:(NSString *)text
-        unsafe extern "C" fn insert_text(this: *mut AnyObject, _sel: Sel, text: *mut AnyObject) {
-            #[allow(deprecated)]
-            let window_ptr: *mut std::ffi::c_void = *(*this).get_ivar(GPUI_WINDOW_IVAR);
-            if window_ptr.is_null() || text.is_null() {
-                return;
-            }
-            let window = &*(window_ptr as *const IosWindow);
-            window.handle_text_input(text);
-        }
-
-        // void deleteBackward
-        unsafe extern "C" fn delete_backward(this: *mut AnyObject, _sel: Sel) {
-            #[allow(deprecated)]
-            let window_ptr: *mut std::ffi::c_void = *(*this).get_ivar(GPUI_WINDOW_IVAR);
-            if window_ptr.is_null() {
-                return;
-            }
-            let window = &*(window_ptr as *const IosWindow);
-            window.handle_delete_backward();
-        }
-
-        // canBecomeFirstResponder must return Bool::YES
-        unsafe extern "C" fn can_become_first_responder(_this: *mut AnyObject, _sel: Sel) -> Bool {
-            Bool::YES
-        }
-
-        // --- UITextInputTraits property accessors ---
-        #[allow(deprecated)]
-        unsafe extern "C" fn get_keyboard_type(this: *mut AnyObject, _sel: Sel) -> isize {
-            *(*this).get_ivar::<isize>("_keyboardType")
-        }
-        #[allow(deprecated)]
-        unsafe extern "C" fn set_keyboard_type(this: *mut AnyObject, _sel: Sel, val: isize) {
-            *(*this).get_mut_ivar::<isize>("_keyboardType") = val;
-        }
-        #[allow(deprecated)]
-        unsafe extern "C" fn get_autocorrection_type(this: *mut AnyObject, _sel: Sel) -> isize {
-            *(*this).get_ivar::<isize>("_autocorrectionType")
-        }
-        #[allow(deprecated)]
-        unsafe extern "C" fn set_autocorrection_type(this: *mut AnyObject, _sel: Sel, val: isize) {
-            *(*this).get_mut_ivar::<isize>("_autocorrectionType") = val;
-        }
-        #[allow(deprecated)]
-        unsafe extern "C" fn get_autocapitalization_type(this: *mut AnyObject, _sel: Sel) -> isize {
-            *(*this).get_ivar::<isize>("_autocapitalizationType")
-        }
-        #[allow(deprecated)]
-        unsafe extern "C" fn set_autocapitalization_type(
-            this: *mut AnyObject,
-            _sel: Sel,
-            val: isize,
-        ) {
-            *(*this).get_mut_ivar::<isize>("_autocapitalizationType") = val;
-        }
-        #[allow(deprecated)]
-        unsafe extern "C" fn get_return_key_type(this: *mut AnyObject, _sel: Sel) -> isize {
-            *(*this).get_ivar::<isize>("_returnKeyType")
-        }
-        #[allow(deprecated)]
-        unsafe extern "C" fn set_return_key_type(this: *mut AnyObject, _sel: Sel, val: isize) {
-            *(*this).get_mut_ivar::<isize>("_returnKeyType") = val;
-        }
-
-        unsafe {
-            decl.add_method(
-                sel!(hasText),
-                has_text as unsafe extern "C" fn(*mut AnyObject, Sel) -> Bool,
-            );
-            decl.add_method(
-                sel!(insertText:),
-                insert_text as unsafe extern "C" fn(*mut AnyObject, Sel, *mut AnyObject),
-            );
-            decl.add_method(
-                sel!(deleteBackward),
-                delete_backward as unsafe extern "C" fn(*mut AnyObject, Sel),
-            );
-            decl.add_method(
-                sel!(canBecomeFirstResponder),
-                can_become_first_responder as unsafe extern "C" fn(*mut AnyObject, Sel) -> Bool,
-            );
-
-            // UITextInputTraits property methods
-            decl.add_method(
-                sel!(keyboardType),
-                get_keyboard_type as unsafe extern "C" fn(*mut AnyObject, Sel) -> isize,
-            );
-            decl.add_method(
-                sel!(setKeyboardType:),
-                set_keyboard_type as unsafe extern "C" fn(*mut AnyObject, Sel, isize),
-            );
-            decl.add_method(
-                sel!(autocorrectionType),
-                get_autocorrection_type as unsafe extern "C" fn(*mut AnyObject, Sel) -> isize,
-            );
-            decl.add_method(
-                sel!(setAutocorrectionType:),
-                set_autocorrection_type as unsafe extern "C" fn(*mut AnyObject, Sel, isize),
-            );
-            decl.add_method(
-                sel!(autocapitalizationType),
-                get_autocapitalization_type as unsafe extern "C" fn(*mut AnyObject, Sel) -> isize,
-            );
-            decl.add_method(
-                sel!(setAutocapitalizationType:),
-                set_autocapitalization_type as unsafe extern "C" fn(*mut AnyObject, Sel, isize),
-            );
-            decl.add_method(
-                sel!(returnKeyType),
-                get_return_key_type as unsafe extern "C" fn(*mut AnyObject, Sel) -> isize,
-            );
-            decl.add_method(
-                sel!(setReturnKeyType:),
-                set_return_key_type as unsafe extern "C" fn(*mut AnyObject, Sel, isize),
-            );
-        }
-
-        decl.register();
-    });
-
-    class!(GPUITextInputView)
-}
-
 /// Handle touch events from the GPUIMetalView
 fn handle_touches(view: *mut AnyObject, touches: *mut AnyObject, event: *mut AnyObject) {
     unsafe {
@@ -571,7 +407,7 @@ impl IosWindow {
             // Create a hidden text input view for keyboard handling.
             // Uses our custom GPUITextInputView which implements UIKeyInput
             // so iOS actually routes keyboard text to us.
-            let text_input_class = register_text_input_view_class();
+            let text_input_class = super::text_input_view::register_text_input_view_class();
             let text_input_view: *mut AnyObject = msg_send![text_input_class, alloc];
             let text_input_frame = ObjcCGRect::new(0.0, 0.0, 1.0, 1.0);
             let text_input_view: *mut AnyObject =
@@ -1149,7 +985,46 @@ impl IosWindow {
         }
     }
 
-    /// Handle text input from the software keyboard
+    /// Runs `f` against the current `PlatformInputHandler`, if one is set.
+    ///
+    /// Follows the same take-then-restore pattern as `gpui_macos`'s
+    /// `with_input_handler`: the handler is removed from `input_handler`
+    /// for the duration of the call, so a re-entrant call (e.g. UIKit
+    /// synchronously asking for `selectedTextRange` from inside a callback
+    /// we're already driving) sees "no handler" instead of double-borrowing
+    /// the `RefCell`, and a `cx.update` failure inside `PlatformInputHandler`
+    /// (GPUI mid-update) is already surfaced as `None`/no-op by its methods
+    /// rather than panicking.
+    pub(crate) fn with_input_handler<R>(
+        &self,
+        f: impl FnOnce(&mut PlatformInputHandler) -> R,
+    ) -> Option<R> {
+        let taken = self.input_handler.borrow_mut().take();
+        let mut handler = taken?;
+        let result = f(&mut handler);
+        *self.input_handler.borrow_mut() = Some(handler);
+        Some(result)
+    }
+
+    /// Whether a real `EntityInputHandler`-backed `PlatformInputHandler` is
+    /// currently set. When `false`, text input falls back to the legacy
+    /// global-callback bridge (`crate::dispatch_text_input`) for backward
+    /// compatibility with `components::material::text_input` and
+    /// `examples/ios_browser`.
+    pub(crate) fn has_real_input_handler(&self) -> bool {
+        self.input_handler.borrow().is_some()
+    }
+
+    /// Handle text input from the software keyboard (`UIKeyInput::insertText:`).
+    ///
+    /// When a real `PlatformInputHandler` is set (a GPUI view using
+    /// `EntityInputHandler`), input is routed through it: a literal newline
+    /// is first dispatched as an `enter` `KeyDown` through the window's
+    /// input callback (so `on_action`/keymap bindings fire, mirroring
+    /// desktop key-then-IME ordering), and only inserted as text if that
+    /// event was not `default_prevented`. Otherwise this falls back to the
+    /// legacy global-callback bridge for callers that haven't migrated to
+    /// `EntityInputHandler` yet.
     pub fn handle_text_input(&self, text: *mut AnyObject) {
         if text.is_null() {
             return;
@@ -1168,23 +1043,41 @@ impl IosWindow {
 
             log::info!("GPUI iOS: Text input: {:?}", text_str);
 
-            // Try the global text input callback (for our TextInput components).
-            // The text is captured in PENDING_TEXT regardless of whether we also
-            // send key events below.
-            let dispatched = crate::dispatch_text_input(&text_str);
-
-            // Try the input handler (for GPUI's built-in text fields)
-            if !dispatched {
-                if let Some(handler) = self.input_handler.borrow_mut().as_mut() {
-                    handler.replace_text_in_range(None, &text_str);
-                    return;
+            if self.has_real_input_handler() {
+                if text_str == "\n" {
+                    let keystroke = gpui::Keystroke {
+                        modifiers: Modifiers::default(),
+                        key: "enter".to_string(),
+                        key_char: Some("\n".to_string()),
+                    };
+                    let event = PlatformInput::KeyDown(gpui::KeyDownEvent {
+                        keystroke,
+                        is_held: false,
+                        prefer_character_input: false,
+                    });
+                    let result = self
+                        .input_callback
+                        .borrow_mut()
+                        .as_mut()
+                        .map(|callback| callback(event));
+                    if let Some(result) = result {
+                        if result.default_prevented {
+                            return;
+                        }
+                    }
                 }
+                self.with_input_handler(|handler| handler.replace_text_in_range(None, &text_str));
+                return;
             }
 
-            // Send key events through GPUI's input callback.
-            // Even if dispatch_text_input captured the text, we still send key
-            // events so GPUI triggers a re-render cycle (which runs
-            // drain_pending_text and updates the UI).
+            // Legacy fallback: the global text input callback (for
+            // `components::material::text_input` and older callers that
+            // haven't migrated to `EntityInputHandler`).
+            crate::dispatch_text_input(&text_str);
+
+            // Send key events through GPUI's input callback so GPUI triggers
+            // a re-render cycle (which runs drain_pending_text and updates
+            // the UI).
             for c in text_str.chars() {
                 let keystroke = gpui::Keystroke {
                     modifiers: Modifiers::default(),
@@ -1207,14 +1100,55 @@ impl IosWindow {
 
     /// Handle the delete-backward action from the software keyboard.
     ///
-    /// This is called by the `GPUITextInputView` when the user taps the
-    /// backspace key.  We dispatch a special sentinel ("\x08") through the
-    /// global text input callback so the active TextInput component can
-    /// remove the last character.
+    /// With a real `PlatformInputHandler`, deletes one character before the
+    /// caret (surrogate-pair aware, never splitting a UTF-16 low/high
+    /// surrogate pair) via `replace_text_in_range`, or deletes the current
+    /// selection if it is non-empty. Otherwise falls back to the legacy
+    /// global-callback sentinel (`"\x08"`) for older callers.
     pub fn handle_delete_backward(&self) {
         log::info!("GPUI iOS: deleteBackward");
 
-        // Try the global callback first (backspace = "\x08")
+        if self.has_real_input_handler() {
+            let handled = self.with_input_handler(|handler| {
+                let selection = handler.selected_text_range(true);
+                let Some(selection) = selection else {
+                    return false;
+                };
+                if !selection.range.is_empty() {
+                    handler.replace_text_in_range(Some(selection.range), "");
+                    return true;
+                }
+                let caret = selection.range.start;
+                if caret == 0 {
+                    return true;
+                }
+                // Delete one UTF-16 code unit, or two if the unit
+                // immediately before the caret is a low surrogate (so we
+                // never split a surrogate pair).
+                let mut adjusted = None;
+                let delete_len = handler
+                    .text_for_range(caret.saturating_sub(2)..caret, &mut adjusted)
+                    .and_then(|s| {
+                        let units: Vec<u16> = s.encode_utf16().collect();
+                        units.last().map(|&last| {
+                            if (0xDC00..=0xDFFF).contains(&last) && units.len() >= 2 {
+                                2
+                            } else {
+                                1
+                            }
+                        })
+                    })
+                    .unwrap_or(1);
+                let start = caret.saturating_sub(delete_len);
+                handler.replace_text_in_range(Some(start..caret), "");
+                true
+            });
+            if handled == Some(true) {
+                return;
+            }
+        }
+
+        // Legacy fallback: global callback sentinel (backspace = "\x08").
         crate::dispatch_text_input("\x08");
 
         // Always send a Backspace KeyDown event through GPUI to trigger
@@ -1252,8 +1186,11 @@ impl IosWindow {
         );
 
         // On key-down, dispatch cursor-movement control codes through the
-        // global text input callback so TextField-based components receive them.
-        if is_key_down {
+        // legacy global text input callback so TextField-based components
+        // receive them. Skipped when a real `PlatformInputHandler` is set —
+        // those views get arrow/home/end via ordinary `KeyDown` keymap
+        // bindings instead.
+        if is_key_down && !self.has_real_input_handler() {
             match key_code {
                 0x50 => {
                     crate::dispatch_text_input("\x1b[D");
@@ -1448,6 +1385,126 @@ impl PlatformWindow for IosWindow {
         self.input_handler.borrow_mut().take()
     }
 
+    fn set_text_input_configuration(&mut self, configuration: gpui::TextInputConfiguration) {
+        use gpui::{Autocapitalize, TextInputAction};
+        unsafe {
+            if self.text_input_view.is_null() {
+                return;
+            }
+            // UITextAutocorrectionType: 0=Default,1=No,2=Yes
+            let autocorrection_type: isize = if configuration.autocorrect { 2 } else { 1 };
+            let _: () = msg_send![
+                self.text_input_view,
+                setAutocorrectionType: autocorrection_type
+            ];
+
+            // UITextAutocapitalizationType: 0=None,1=Words,2=Sentences,3=AllChars
+            let autocapitalization_type: isize = match configuration.autocapitalize {
+                Autocapitalize::None => 0,
+                Autocapitalize::Words => 1,
+                Autocapitalize::Sentences => 2,
+                Autocapitalize::Characters => 3,
+            };
+            let _: () = msg_send![
+                self.text_input_view,
+                setAutocapitalizationType: autocapitalization_type
+            ];
+
+            // UITextSpellCheckingType: 0=Default,1=No,2=Yes
+            let spell_checking_type: isize = if configuration.suggestions { 2 } else { 1 };
+            let _: () = msg_send![
+                self.text_input_view,
+                setSpellCheckingType: spell_checking_type
+            ];
+            // Disable smart quotes/dashes along with autocorrect — matches
+            // the intent of "no text assistance" rather than half-applying it.
+            // UITextSmartQuotesType / UITextSmartDashesType: 0=Default,1=No,2=Yes
+            let smart_type: isize = if configuration.autocorrect { 2 } else { 1 };
+            let _: () = msg_send![self.text_input_view, setSmartQuotesType: smart_type];
+            let _: () = msg_send![self.text_input_view, setSmartDashesType: smart_type];
+
+            // UIReturnKeyType
+            let return_key_type: isize = match configuration.input_action {
+                TextInputAction::Go => 6,
+                TextInputAction::Done => 9,
+                TextInputAction::Search => 4,
+                TextInputAction::Send => 7,
+                TextInputAction::Next => 5,
+                TextInputAction::Enter | TextInputAction::Unspecified => 0,
+                TextInputAction::Previous => 0,
+            };
+            let _: () = msg_send![self.text_input_view, setReturnKeyType: return_key_type];
+
+            let is_first_responder: bool = msg_send![self.text_input_view, isFirstResponder];
+            if is_first_responder {
+                let _: () = msg_send![self.text_input_view, reloadInputViews];
+            }
+        }
+    }
+
+    fn show_soft_keyboard(&self) {
+        unsafe {
+            if self.text_input_view.is_null() {
+                return;
+            }
+            let _: () = msg_send![self.text_input_view,
+                performSelector: sel!(becomeFirstResponder),
+                withObject: ptr::null::<AnyObject>(),
+                afterDelay: 0.0_f64
+            ];
+        }
+    }
+
+    fn hide_soft_keyboard(&self) {
+        unsafe {
+            if self.text_input_view.is_null() {
+                return;
+            }
+            let _: () = msg_send![self.text_input_view,
+                performSelector: sel!(resignFirstResponder),
+                withObject: ptr::null::<AnyObject>(),
+                afterDelay: 0.0_f64
+            ];
+        }
+    }
+
+    fn text_input_state_changed(&self, change: gpui::TextInputStateChange) {
+        use gpui::TextInputStateChange;
+        unsafe {
+            if self.text_input_view.is_null() {
+                return;
+            }
+            match change {
+                TextInputStateChange::FocusGained => {
+                    self.show_soft_keyboard();
+                }
+                TextInputStateChange::FocusLost => {
+                    self.hide_soft_keyboard();
+                }
+                TextInputStateChange::SelectionChanged => {
+                    let delegate: *mut AnyObject = msg_send![self.text_input_view, inputDelegate];
+                    if !delegate.is_null() {
+                        let _: () = msg_send![
+                            delegate,
+                            selectionWillChange: self.text_input_view
+                        ];
+                        let _: () = msg_send![
+                            delegate,
+                            selectionDidChange: self.text_input_view
+                        ];
+                    }
+                }
+                TextInputStateChange::ContentChanged => {
+                    let delegate: *mut AnyObject = msg_send![self.text_input_view, inputDelegate];
+                    if !delegate.is_null() {
+                        let _: () = msg_send![delegate, textWillChange: self.text_input_view];
+                        let _: () = msg_send![delegate, textDidChange: self.text_input_view];
+                    }
+                }
+            }
+        }
+    }
+
     fn prompt(
         &self,
         _level: PromptLevel,
@@ -1629,8 +1686,24 @@ impl PlatformWindow for IosWindow {
         guard.as_ref().map(|r| r.gpu_specs())
     }
 
-    fn update_ime_position(&self, _bounds: Bounds<Pixels>) {
-        // iOS handles IME positioning automatically
+    fn update_ime_position(&self, bounds: Bounds<Pixels>) {
+        // Move the (transparent, non-interactive) text input view over the
+        // focused element's bounds so UIKit positions autocorrect bubbles,
+        // the predictive-text candidate bar, and dictation UI correctly.
+        // The view stays alpha~0 and userInteractionEnabled=NO so touches
+        // still reach the Metal view underneath.
+        unsafe {
+            if self.text_input_view.is_null() {
+                return;
+            }
+            let frame = ObjcCGRect::new(
+                f64::from(bounds.origin.x),
+                f64::from(bounds.origin.y),
+                f64::from(bounds.size.width).max(1.0),
+                f64::from(bounds.size.height).max(1.0),
+            );
+            let _: () = msg_send![self.text_input_view, setFrame: frame];
+        }
     }
 }
 
