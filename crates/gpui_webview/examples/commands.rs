@@ -13,16 +13,15 @@ use gpui::{
     App, Bounds, ClickEvent, Context, Render, Window, WindowBounds, WindowOptions, div,
     prelude::*, px, rgb, size,
 };
-use gpui_webview::{WebViewHandle, webview};
+use gpui_webview::{IpcRequest, IpcResult, WebViewHandle, ok, webview};
 use serde::Deserialize;
 use serde_json::json;
 
-/// Requests arrive from JS as `{ id, cmd, payload }`.
+/// `greet`'s payload, decoded from JSON via `IpcRequest::payload`.
 #[derive(Deserialize)]
-struct IpcRequest {
-    id: u64,
-    cmd: String,
-    payload: serde_json::Value,
+struct GreetArgs {
+    #[serde(default)]
+    name: String,
 }
 
 /// Server-side state a Tauri app would normally keep behind its commands.
@@ -30,42 +29,27 @@ struct AppState {
     counter: AtomicI64,
 }
 
-/// Run one native command and return its JSON result, the way a Tauri
+/// Run one native command and return its result, the way a Tauri
 /// `#[tauri::command]` function would.
-fn run_command(state: &AppState, cmd: &str, payload: &serde_json::Value) -> Result<serde_json::Value, String> {
-    match cmd {
+fn run_command(state: &AppState, request: &IpcRequest) -> IpcResult {
+    match request.cmd.as_ref() {
         "greet" => {
-            let name = payload
-                .get("name")
-                .and_then(|v| v.as_str())
-                .unwrap_or("world");
-            Ok(json!({ "message": format!("Hello, {name}! This reply came from native Rust.") }))
+            let args: GreetArgs = request.payload().map_err(|err| err.to_string())?;
+            let name = if args.name.is_empty() { "world" } else { &args.name };
+            ok(json!({ "message": format!("Hello, {name}! This reply came from native Rust.") }))
         }
         "increment_counter" => {
             let value = state.counter.fetch_add(1, Ordering::SeqCst) + 1;
-            Ok(json!({ "value": value }))
+            ok(json!({ "value": value }))
         }
-        "get_counter" => Ok(json!({ "value": state.counter.load(Ordering::SeqCst) })),
-        "system_info" => Ok(json!({
+        "get_counter" => ok(json!({ "value": state.counter.load(Ordering::SeqCst) })),
+        "system_info" => ok(json!({
             "os": std::env::consts::OS,
             "arch": std::env::consts::ARCH,
             "cwd": std::env::current_dir().map(|p| p.display().to_string()).unwrap_or_default(),
         })),
         other => Err(format!("unknown command: {other}")),
     }
-}
-
-/// Evaluate JS that settles the promise `window.invoke()` handed back to the page.
-fn resolve(handle: &WebViewHandle, id: u64, result: Result<serde_json::Value, String>) {
-    let (ok, value) = match result {
-        Ok(value) => (true, value),
-        Err(message) => (false, json!(message)),
-    };
-    let script = format!(
-        "window.__gpuiIpcResolve({id}, {ok}, {});",
-        serde_json::to_string(&value).unwrap_or_else(|_| "null".into())
-    );
-    handle.evaluate_javascript(&script, None);
 }
 
 struct CommandsDemo {
@@ -140,13 +124,9 @@ impl Render for CommandsDemo {
                 webview("commands-content")
                     .html(PAGE_HTML)
                     .devtools(true)
-                    .on_ipc_message(move |raw, handle, _window, _cx| {
-                        let request: IpcRequest = match serde_json::from_str(raw) {
-                            Ok(request) => request,
-                            Err(_) => return,
-                        };
-                        let result = run_command(&state, &request.cmd, &request.payload);
-                        resolve(handle, request.id, result);
+                    .on_ipc_message(move |request, handle, _window, _cx| {
+                        let result = run_command(&state, request);
+                        handle.reply(request, result);
                     })
                     .on_create_handle(move |handle, _window, _cx| {
                         *handle_cell.borrow_mut() = Some(handle);

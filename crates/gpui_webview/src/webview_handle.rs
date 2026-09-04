@@ -1,6 +1,8 @@
 use gpui::SharedString;
+use serde::Serialize;
 use std::rc::Rc;
 
+use crate::ipc::{self, IpcRequest, IpcResult};
 use crate::platform::PlatformWebView;
 
 /// A handle for controlling a [`WebView`] after creation.
@@ -84,5 +86,23 @@ impl WebViewHandle {
             .as_any()
             .downcast_ref::<crate::platform::WryWebView>()
             .map(|webview| webview.raw())
+    }
+
+    /// Settle the promise a page's `window.invoke()` call for `request` is
+    /// waiting on, with the given [`IpcResult`]. This is the reply half of
+    /// [`crate::WebView::on_ipc_message`].
+    pub fn reply(&self, request: &IpcRequest, result: IpcResult) {
+        let script = ipc::resolve_script(request.id, &result);
+        self.inner.evaluate_javascript(&script, None);
+    }
+
+    /// Reply to `request` with a success value.
+    pub fn reply_ok<T: Serialize>(&self, request: &IpcRequest, value: T) {
+        self.reply(request, ipc::ok(value));
+    }
+
+    /// Reply to `request` with an error message.
+    pub fn reply_err(&self, request: &IpcRequest, message: impl Into<String>) {
+        self.reply(request, Err(message.into()));
     }
 }
