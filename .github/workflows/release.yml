@@ -1,10 +1,9 @@
 # Publish to crates on a version tag push
 name: Release
 
+# Disabled on this fork: publishing tagged releases to crates.io only makes
+# sense from the upstream repository. Trigger is manual-only here.
 on:
-  push:
-    tags:
-      - 'v*'
   workflow_dispatch:
     inputs:
       dry_run:

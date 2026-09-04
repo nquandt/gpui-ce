@@ -3,10 +3,10 @@
 # created in this repository.
 name: Publish prerelease
 
+# Disabled on this fork: publishing dev snapshots to crates.io only makes
+# sense from the upstream repository. Trigger is manual-only here.
 on:
-  workflow_run:
-    workflows: [CI]
-    types: [completed]
+  workflow_dispatch:
 
 concurrency:
   # crates.io versions are IMMUTABLE, so alpha numbers must be allocated in
