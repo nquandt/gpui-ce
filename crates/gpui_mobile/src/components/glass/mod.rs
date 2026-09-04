@@ -7,18 +7,18 @@
 //!
 //! | Component | Description |
 //! |-----------|-------------|
-//! | [`panel`] | Frosted-glass base container with translucent bg + border |
+//! | [`panel()`] | Frosted-glass base container with translucent bg + border |
 //! | [`separator`] / [`separator_full`] | Thin 0.5 px divider lines |
-//! | [`hero_card`] | Gradient mesh background + glass overlay card |
+//! | [`hero_card()`] | Gradient mesh background + glass overlay card |
 //! | [`buttons_row`] | Tinted, plain, and capsule button rows |
 //! | [`button_tinted`] / [`button_plain`] | Individual button styles |
-//! | [`segmented_control`] | iOS-style multi-segment picker |
-//! | [`settings_list`] | Grouped settings rows with toggles and chevrons |
+//! | [`segmented_control()`] | iOS-style multi-segment picker |
+//! | [`settings_list()`] | Grouped settings rows with toggles and chevrons |
 //! | [`toggle`] | iOS-style on/off toggle switch |
-//! | [`notification_banners`] / [`notification`] | Banner-style alerts |
-//! | [`search_bar`] | Rounded search input with icon and clear button |
+//! | [`notification_banners`] / [`notification()`] | Banner-style alerts |
+//! | [`search_bar()`] | Rounded search input with icon and clear button |
 //! | [`sliders`] / [`slider_row`] | Labelled slider tracks with thumbs |
-//! | [`tab_bar`] | Bottom tab bar with icon + label items |
+//! | [`tab_bar()`] | Bottom tab bar with icon + label items |
 
 pub mod buttons;
 pub mod hero_card;
