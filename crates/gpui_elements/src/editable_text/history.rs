@@ -1,3 +1,4 @@
+use smallvec::SmallVec;
 use std::{
     ops::Range,
     time::{Duration, Instant},
