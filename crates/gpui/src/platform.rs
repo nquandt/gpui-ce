@@ -311,6 +311,12 @@ pub trait Platform: 'static {
 
     fn set_cursor_style(&self, style: CursorStyle);
 
+    /// Opts the currently-hovered region out of platform cursor management,
+    /// for use when a native view layered on top (e.g. an embedded webview)
+    /// manages its own cursor. Platforms that don't need special handling for
+    /// this may leave the default no-op implementation.
+    fn disable_cursor_style(&self) {}
+
     /// Hides the mouse cursor until the user moves the mouse over one of
     /// this application's windows.
     fn hide_cursor_until_mouse_moves(&self);
