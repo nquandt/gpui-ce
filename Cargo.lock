@@ -3121,6 +3121,8 @@ dependencies = [
  "gpui_ce_elements",
  "gpui_ce_platform",
  "raw-window-handle",
+ "serde",
+ "serde_json",
  "wry",
 ]
 

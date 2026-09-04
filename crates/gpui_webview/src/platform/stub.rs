@@ -33,6 +33,16 @@ impl PlatformWebView for StubWebView {
     }
     fn set_devtools_enabled(&self, _: bool) {}
     fn focus(&self) {}
+    fn set_navigation_handler(&self, _: Option<Box<dyn FnMut(&str) -> bool>>) {}
+    fn is_url_trusted(&self, _: &str) -> bool {
+        true
+    }
+    fn as_any(&self) -> &dyn std::any::Any {
+        self
+    }
+    fn take_ipc_messages(&self) -> Vec<String> {
+        Vec::new()
+    }
 }
 
 pub(crate) fn create_platform_webview(

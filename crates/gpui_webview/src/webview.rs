@@ -4,6 +4,7 @@ use gpui::{
 };
 use std::rc::Rc;
 
+use crate::ipc::IpcRequest;
 use crate::platform::{self, PlatformWebView};
 use crate::webview_handle::WebViewHandle;
 
@@ -17,6 +18,9 @@ pub(crate) struct WebViewConfig {
     pub zoom: f32,
     pub bounds: Bounds<Pixels>,
     pub initial_title: Option<SharedString>,
+    /// Scripts evaluated before page scripts run, on every navigation. See
+    /// `WebView::init_script`.
+    pub init_scripts: Vec<String>,
 }
 
 impl Default for WebViewConfig {
@@ -29,6 +33,7 @@ impl Default for WebViewConfig {
             zoom: 1.0,
             bounds: Bounds::default(),
             initial_title: None,
+            init_scripts: Vec::new(),
         }
     }
 }
@@ -66,6 +71,7 @@ pub struct WebView {
     on_page_load: Option<Box<dyn FnMut(&str)>>,
     on_url_changed: Option<Box<dyn FnMut(&str, &mut Window, &mut App)>>,
     on_create_handle: Option<Box<dyn FnMut(WebViewHandle, &mut Window, &mut App)>>,
+    on_ipc_message: Option<Box<dyn FnMut(&IpcRequest, &WebViewHandle, &mut Window, &mut App)>>,
     style: StyleRefinement,
 }
 
@@ -79,6 +85,7 @@ impl WebView {
             on_page_load: None,
             on_url_changed: None,
             on_create_handle: None,
+            on_ipc_message: None,
             style: StyleRefinement::default(),
         }
     }
@@ -113,7 +120,26 @@ impl WebView {
         self
     }
 
-    /// Callback fired when navigation is attempted. Return false to block.
+    /// Add a script evaluated before any page script runs, on every
+    /// navigation. Call multiple times to add several scripts; they run in
+    /// the order added. Useful for polyfills, analytics shims, or a
+    /// consumer-defined preload API.
+    pub fn init_script(mut self, script: impl Into<String>) -> Self {
+        self.config.init_scripts.push(script.into());
+        self
+    }
+
+    /// Callback fired when navigation is attempted, and reused as the trust
+    /// check that gates IPC dispatch (see [`WebView::on_ipc_message`]).
+    /// Return false to block the navigation, or drop an IPC message from a
+    /// page whose URL fails the check.
+    ///
+    /// Without this callback the webview behaves like a classic, open
+    /// browser: any URL may load, and any loaded page may call
+    /// `window.invoke`. Set it to scope the webview into an embedded-app
+    /// mode where only approved URLs (e.g. your own bundled origin) can
+    /// navigate or talk to native code, the way a Tauri app scopes its IPC
+    /// bridge to its own origin.
     pub fn on_navigation(mut self, callback: impl FnMut(&str) -> bool + 'static) -> Self {
         self.on_navigation = Some(Box::new(callback));
         self
@@ -144,6 +170,20 @@ impl WebView {
         callback: impl FnMut(WebViewHandle, &mut Window, &mut App) + 'static,
     ) -> Self {
         self.on_create_handle = Some(Box::new(callback));
+        self
+    }
+
+    /// Callback fired for each command the page sends via
+    /// `window.invoke(cmd, payload)`, decoded into an [`IpcRequest`].
+    ///
+    /// Reply with [`WebViewHandle::reply`] (or `reply_ok` / `reply_err`)
+    /// using the same request to settle the matching promise on the page,
+    /// the way a Tauri command handler replies to `invoke()`.
+    pub fn on_ipc_message(
+        mut self,
+        callback: impl FnMut(&IpcRequest, &WebViewHandle, &mut Window, &mut App) + 'static,
+    ) -> Self {
+        self.on_ipc_message = Some(Box::new(callback));
         self
     }
 
@@ -226,6 +266,15 @@ impl Element for WebView {
 
                 let handle = WebViewHandle::new(webview_state.platform_webview.clone());
 
+                // The native navigation handler is registered once at webview
+                // creation (see `wry_backend::WryWebView::new`), but `self`
+                // (and its `on_navigation` closure) is rebuilt every frame,
+                // so refresh the callback the handler reads through each
+                // prepaint.
+                webview_state
+                    .platform_webview
+                    .set_navigation_handler(self.on_navigation.take());
+
                 // Detect main-frame URL changes (e.g. internal navigation) and
                 // notify observers. `url()` reports the top-level document URL,
                 // so sub-frame navigations don't trigger spurious updates.
@@ -249,6 +298,29 @@ impl Element for WebView {
                 // Fire the on_create_handle callback on first creation
                 if is_first_creation && let Some(ref mut callback) = self.on_create_handle {
                     callback(handle.clone(), window, cx);
+                }
+
+                // Dispatch any `window.invoke()` calls the page made since
+                // the last frame to the on_ipc_message callback. Messages
+                // that fail to decode are silently dropped; the page-side
+                // promise will simply never resolve, which surfaces as a
+                // hang during development rather than a crash at runtime.
+                //
+                // Messages are always drained, even from an untrusted page,
+                // so a page that gets navigated away can't build up a queue
+                // of commands that fire the moment a trusted URL loads.
+                let pending_ipc = webview_state.platform_webview.take_ipc_messages();
+                if let Some(ref mut callback) = self.on_ipc_message {
+                    let is_trusted = webview_state
+                        .platform_webview
+                        .is_url_trusted(&webview_state.last_known_url);
+                    if is_trusted {
+                        for message in pending_ipc {
+                            if let Some(request) = IpcRequest::parse(&message) {
+                                callback(&request, &handle, window, cx);
+                            }
+                        }
+                    }
                 }
 
                 (Some(handle), Some(webview_state))

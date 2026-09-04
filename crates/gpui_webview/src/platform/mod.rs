@@ -19,6 +19,23 @@ pub(crate) trait PlatformWebView {
     fn url(&self) -> SharedString;
     fn set_devtools_enabled(&self, enabled: bool);
     fn focus(&self);
+    /// Replace the navigation-interception callback. Called every prepaint
+    /// with the latest closure from `WebView::on_navigation`, so the native
+    /// handler (registered once at webview creation) always calls through to
+    /// the current frame's callback.
+    fn set_navigation_handler(&self, handler: Option<Box<dyn FnMut(&str) -> bool>>);
+    /// Re-run the current navigation policy (set via `set_navigation_handler`)
+    /// against `url` without consuming or replacing it. Used to gate IPC
+    /// dispatch on the same trust decision that governs navigation, so a
+    /// page that isn't allowed to navigate to also can't call native code.
+    /// Returns `true` (trusted) when no policy has been set.
+    fn is_url_trusted(&self, url: &str) -> bool;
+    /// Downcast escape hatch so `WebViewHandle::native()` can reach the
+    /// concrete backend (e.g. `wry::WebView`) for APIs this crate doesn't
+    /// wrap yet.
+    fn as_any(&self) -> &dyn std::any::Any;
+    /// Drain and return IPC messages sent from JS via `window.ipc.postMessage`.
+    fn take_ipc_messages(&self) -> Vec<String>;
 }
 
 #[cfg(feature = "webview")]

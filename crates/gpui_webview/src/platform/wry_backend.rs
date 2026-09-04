@@ -1,9 +1,18 @@
 use gpui::{App, Bounds, Pixels, SharedString, Window};
 use raw_window_handle::{HasWindowHandle, RawWindowHandle};
+use std::cell::RefCell;
+use std::rc::Rc;
 use std::sync::{Arc, Mutex};
 
 use super::PlatformWebView;
 use crate::webview::WebViewConfig;
+
+/// Shared cell holding the current navigation-interception callback. Wry
+/// registers its navigation handler once at webview creation, but the
+/// `WebView` element (and its `on_navigation` closure) is rebuilt every
+/// frame, so the native handler reads through this cell instead of
+/// capturing a closure directly.
+type NavigationHandler = Rc<RefCell<Option<Box<dyn FnMut(&str) -> bool>>>>;
 
 struct RawWindowHandleWrapper(RawWindowHandle);
 
@@ -17,6 +26,8 @@ impl HasWindowHandle for RawWindowHandleWrapper {
 
 pub(crate) struct WryWebView {
     webview: wry::WebView,
+    navigation_handler: NavigationHandler,
+    ipc_queue: Arc<Mutex<Vec<String>>>,
 }
 
 impl WryWebView {
@@ -50,6 +61,48 @@ impl WryWebView {
         if config.devtools {
             builder = builder.with_devtools(true);
         }
+
+        // Bridge script injected before any page content runs, and before
+        // any consumer-supplied init script below, so the bridge is always
+        // available to page code. It gives page JS a `window.invoke(cmd,
+        // payload)` helper that round-trips through the native IPC channel
+        // and resolves with the Rust-side result, mirroring the `invoke()`
+        // helper Tauri apps use to call host code.
+        builder = builder.with_initialization_script(IPC_BRIDGE_SCRIPT);
+
+        let ipc_queue: Arc<Mutex<Vec<String>>> = Arc::new(Mutex::new(Vec::new()));
+        let ipc_queue_for_handler = ipc_queue.clone();
+        let app = cx.to_async();
+        builder = builder.with_ipc_handler(move |request| {
+            ipc_queue_for_handler
+                .lock()
+                .unwrap()
+                .push(request.body().to_string());
+            // Wake the owning window so the queued message is drained and
+            // dispatched to the `on_ipc_message` callback promptly, the same
+            // way page-load events do above.
+            let app = app.clone();
+            let executor = app.foreground_executor().clone();
+            executor
+                .spawn(async move { app.update(|cx| cx.refresh_windows()) })
+                .detach();
+        });
+
+        // Scripts a consumer wants evaluated before any page script runs on
+        // every navigation (analytics shims, polyfills, etc). Order matches
+        // `WebView::init_script` call order.
+        for script in &config.init_scripts {
+            builder = builder.with_initialization_script(script.as_str());
+        }
+
+        let navigation_handler: NavigationHandler = Rc::new(RefCell::new(None));
+        let navigation_handler_for_builder = navigation_handler.clone();
+        builder = builder.with_navigation_handler(move |url| {
+            match navigation_handler_for_builder.borrow_mut().as_mut() {
+                Some(callback) => callback(&url),
+                None => true,
+            }
+        });
 
         // Wake the owning GPUI window whenever the webview starts or finishes a
         // page load, so its URL-detection poll runs promptly. Without this, the
@@ -94,9 +147,43 @@ impl WryWebView {
             let _ = webview.zoom(config.zoom as f64);
         }
 
-        WryWebView { webview }
+        WryWebView {
+            webview,
+            navigation_handler,
+            ipc_queue,
+        }
+    }
+
+    /// The underlying wry webview, for capabilities this crate doesn't wrap
+    /// yet. Reached publicly via `WebViewHandle::native()`.
+    pub(crate) fn raw(&self) -> &wry::WebView {
+        &self.webview
     }
 }
+
+/// Injected into every page before other scripts run. Wraps the raw
+/// `window.ipc.postMessage` channel wry provides with a request-id keyed
+/// promise map, so page JS can `await window.invoke("cmd", payload)` instead
+/// of handling the postMessage protocol itself.
+const IPC_BRIDGE_SCRIPT: &str = r#"
+(function () {
+  window.__gpuiIpcNextId = 0;
+  window.__gpuiIpcPending = {};
+  window.invoke = function (cmd, payload) {
+    const id = window.__gpuiIpcNextId++;
+    return new Promise(function (resolve, reject) {
+      window.__gpuiIpcPending[id] = { resolve: resolve, reject: reject };
+      window.ipc.postMessage(JSON.stringify({ id: id, cmd: cmd, payload: payload }));
+    });
+  };
+  window.__gpuiIpcResolve = function (id, ok, result) {
+    const pending = window.__gpuiIpcPending[id];
+    if (!pending) return;
+    delete window.__gpuiIpcPending[id];
+    if (ok) pending.resolve(result); else pending.reject(result);
+  };
+})();
+"#;
 
 impl PlatformWebView for WryWebView {
     fn set_bounds(&self, bounds: Bounds<Pixels>) {
@@ -182,6 +269,25 @@ impl PlatformWebView for WryWebView {
 
     fn focus(&self) {
         let _ = self.webview.focus();
+    }
+
+    fn set_navigation_handler(&self, handler: Option<Box<dyn FnMut(&str) -> bool>>) {
+        *self.navigation_handler.borrow_mut() = handler;
+    }
+
+    fn is_url_trusted(&self, url: &str) -> bool {
+        match self.navigation_handler.borrow_mut().as_mut() {
+            Some(policy) => policy(url),
+            None => true,
+        }
+    }
+
+    fn as_any(&self) -> &dyn std::any::Any {
+        self
+    }
+
+    fn take_ipc_messages(&self) -> Vec<String> {
+        std::mem::take(&mut *self.ipc_queue.lock().unwrap())
     }
 }
 
