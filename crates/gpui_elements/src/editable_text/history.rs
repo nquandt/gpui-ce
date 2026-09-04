@@ -1,4 +1,3 @@
-use smallvec::SmallVec;
 use std::{
     ops::Range,
     time::{Duration, Instant},
@@ -29,8 +28,8 @@ impl Default for EditableTextHistory {
     fn default() -> Self {
         Self {
             grouping_interval: DEFAULT_GROUP_INTERVAL,
-            undo_stack: Default::default(),
-            redo_stack: Default::default(),
+            undo_stack: SmallVec::with_capacity(MAX_HISTORY_LEN),
+            redo_stack: SmallVec::with_capacity(MAX_HISTORY_LEN),
         }
     }
 }

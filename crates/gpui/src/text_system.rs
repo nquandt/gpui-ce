@@ -1,3 +1,26 @@
+use crate::{
+    Bounds, DevicePixels, Pixels, PlatformTextSystem, Point, Result, SharedString, Size,
+    StrikethroughStyle, TextRenderingMode, UnderlineStyle, px,
+};
+use anyhow::{Context as _, anyhow};
+use collections::FxHashMap;
+use core::fmt;
+use derive_more::{Add, Deref, FromStr, Sub};
+use itertools::Itertools;
+use palette::Hsla;
+use parking_lot::{Mutex, RwLock, RwLockUpgradableReadGuard};
+use schemars::JsonSchema;
+use serde::{Deserialize, Serialize};
+use smallvec::{SmallVec, smallvec};
+use std::{
+    borrow::Cow,
+    cmp,
+    fmt::{Debug, Display, Formatter},
+    hash::{Hash, Hasher},
+    ops::{Deref, DerefMut, Range},
+    sync::Arc,
+};
+
 mod font_fallbacks;
 mod font_features;
 mod line;
@@ -9,28 +32,6 @@ pub use font_features::*;
 pub use line::*;
 pub use line_layout::*;
 pub use line_wrapper::*;
-use schemars::JsonSchema;
-use serde::{Deserialize, Serialize};
-
-use crate::{
-    Bounds, DevicePixels, Hsla, Pixels, PlatformTextSystem, Point, Result, SharedString, Size,
-    StrikethroughStyle, TextRenderingMode, UnderlineStyle, px,
-};
-use anyhow::{Context as _, anyhow};
-use collections::FxHashMap;
-use core::fmt;
-use derive_more::{Add, Deref, FromStr, Sub};
-use itertools::Itertools;
-use parking_lot::{Mutex, RwLock, RwLockUpgradableReadGuard};
-use smallvec::{SmallVec, smallvec};
-use std::{
-    borrow::Cow,
-    cmp,
-    fmt::{Debug, Display, Formatter},
-    hash::{Hash, Hasher},
-    ops::{Deref, DerefMut, Range},
-    sync::Arc,
-};
 
 /// An opaque identifier for a specific font.
 #[derive(Hash, PartialEq, Eq, Clone, Copy, Debug)]
@@ -93,7 +94,7 @@ impl TextSystem {
                 .map(|font| font.family.to_string()),
         );
         names.push(".SystemUIFont".to_string());
-        names.sort();
+        names.sort_unstable();
         names.dedup();
         names
     }
@@ -165,6 +166,22 @@ impl TextSystem {
         );
     }
 
+    /// Prewarm any system font caches needed to shape text.
+    ///
+    /// This may be expensive, so callers should generally invoke it on a
+    /// background executor. Missing entries are still populated on demand by
+    /// the normal shaping path.
+    pub fn prewarm_fonts(&self, fonts: &[Font]) {
+        let mut font_ids = SmallVec::<[FontId; 8]>::new();
+        for font in fonts {
+            let font_id = self.resolve_font(font);
+            if !font_ids.contains(&font_id) {
+                font_ids.push(font_id);
+            }
+        }
+        self.platform_text_system.prewarm_fonts(&font_ids);
+    }
+
     /// Get the bounding box for the given font and font size.
     /// A font's bounding box is the smallest rectangle that could enclose all glyphs
     /// in the font. superimposed over one another.
@@ -215,6 +232,7 @@ impl TextSystem {
                 &[FontRun {
                     len: buffer.len(),
                     font_id,
+                    letter_spacing: None,
                 }],
             )
             .width
@@ -356,6 +374,14 @@ impl TextSystem {
     ) -> TextRenderingMode {
         self.platform_text_system
             .recommended_rendering_mode(font_id, font_size)
+    }
+}
+
+#[cfg(test)]
+impl TextSystem {
+    /// Reach the platform shaper from crate tests (e.g. `line_wrapper`) without a [`WindowTextSystem`].
+    pub(crate) fn platform_text_system_for_tests(&self) -> Arc<dyn PlatformTextSystem> {
+        self.platform_text_system.clone()
     }
 }
 
@@ -563,8 +589,10 @@ impl WindowTextSystem {
                 };
 
                 let font_id = self.resolve_font(&run.font);
+                let letter_spacing = run.letter_spacing;
                 if let Some(font_run) = font_runs.last_mut()
                     && font_id == font_run.font_id
+                    && font_run.letter_spacing == letter_spacing
                     && !decoration_changed
                 {
                     font_run.len += run_len_within_line;
@@ -572,6 +600,7 @@ impl WindowTextSystem {
                     font_runs.push(FontRun {
                         len: run_len_within_line,
                         font_id,
+                        letter_spacing,
                     });
                 }
 
@@ -677,8 +706,10 @@ impl WindowTextSystem {
             };
 
             let font_id = self.resolve_font(&run.font);
+            let letter_spacing = run.letter_spacing;
             if let Some(font_run) = font_runs.last_mut()
                 && font_id == font_run.font_id
+                && font_run.letter_spacing == letter_spacing
                 && !decoration_changed
             {
                 font_run.len += run.len;
@@ -686,6 +717,7 @@ impl WindowTextSystem {
                 font_runs.push(FontRun {
                     len: run.len,
                     font_id,
+                    letter_spacing,
                 });
             }
         }
@@ -713,6 +745,7 @@ impl WindowTextSystem {
                 &[FontRun {
                     len: buffer.len(),
                     font_id,
+                    letter_spacing: None,
                 }],
                 None,
             )
@@ -759,8 +792,10 @@ impl WindowTextSystem {
             };
 
             let font_id = self.resolve_font(&run.font);
+            let letter_spacing = run.letter_spacing;
             if let Some(font_run) = font_runs.last_mut()
                 && font_id == font_run.font_id
+                && font_run.letter_spacing == letter_spacing
                 && !decoration_changed
             {
                 font_run.len += run.len;
@@ -768,6 +803,7 @@ impl WindowTextSystem {
                 font_runs.push(FontRun {
                     len: run.len,
                     font_id,
+                    letter_spacing,
                 });
             }
         }
@@ -821,8 +857,10 @@ impl WindowTextSystem {
             };
 
             let font_id = self.resolve_font(&run.font);
+            let letter_spacing = run.letter_spacing;
             if let Some(font_run) = font_runs.last_mut()
                 && font_id == font_run.font_id
+                && font_run.letter_spacing == letter_spacing
                 && !decoration_changed
             {
                 font_run.len += run.len;
@@ -830,6 +868,7 @@ impl WindowTextSystem {
                 font_runs.push(FontRun {
                     len: run.len,
                     font_id,
+                    letter_spacing,
                 });
             }
         }
@@ -864,7 +903,8 @@ pub struct LineWrapperHandle {
 impl Drop for LineWrapperHandle {
     fn drop(&mut self) {
         let mut state = self.text_system.wrapper_pool.lock();
-        let wrapper = self.wrapper.take().unwrap();
+        let mut wrapper = self.wrapper.take().unwrap();
+        wrapper.set_letter_spacing(None);
         state
             .get_mut(&FontIdWithSize {
                 font_id: wrapper.font_id,
@@ -992,7 +1032,7 @@ impl Display for FontStyle {
 }
 
 /// A styled run of text, for use in [`crate::TextLayout`].
-#[derive(Clone, Debug, PartialEq, Eq, Default)]
+#[derive(Clone, Debug, PartialEq, Default)]
 pub struct TextRun {
     /// A number of utf8 bytes
     pub len: usize,
@@ -1006,6 +1046,8 @@ pub struct TextRun {
     pub underline: Option<UnderlineStyle>,
     /// The strikethrough style (if any)
     pub strikethrough: Option<StrikethroughStyle>,
+    /// Letter spacing applied between glyphs, in pixels.
+    pub letter_spacing: Option<Pixels>,
 }
 
 #[cfg(all(target_os = "macos", test))]

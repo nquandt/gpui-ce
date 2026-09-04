@@ -27,8 +27,8 @@
 //! (overflow text is clipped and does not scroll).
 //! ```
 //! # use gpui::prelude::*;
-//! # fn test() -> gpui_elements::editable_text::EditableTextElement {
-//! use gpui_elements::editable_text::text_input;
+//! # fn test() -> gpui_ce_elements::editable_text::EditableTextElement {
+//! use gpui_ce_elements::editable_text::text_input;
 //! text_input("my_input")
 //!     .placeholder("empty text")
 //!     .w_5()
@@ -40,11 +40,11 @@
 //! A single-line text input with a flexible width and text that does not wrap, but will scroll if overflowing.
 //! ```
 //! # use gpui::{prelude::*, Hsla};
-//! # fn test() -> gpui_elements::editable_text::EditableTextElement {
-//! use gpui_elements::editable_text::text_input;
+//! # fn test() -> gpui_ce_elements::editable_text::EditableTextElement {
+//! use gpui_ce_elements::editable_text::text_input;
 //! text_input("my_input")
 //!     .placeholder("empty text")
-//!     .border_1().rounded_lg().border_color(Hsla::white()) // has a border
+//!     .border_1().rounded_lg().border_color(gpui::white()) // has a border
 //!     .p_2() // padding between the text and border
 //!     .min_w_10().max_w_128()
 //!     .min_h_auto()
@@ -56,11 +56,11 @@
 //! A multi-line text area with flexible height, wrapping text, and scrolling overflow on both axes.
 //! ```
 //! # use gpui::{prelude::*, Hsla};
-//! # fn test() -> gpui_elements::editable_text::EditableTextElement {
-//! use gpui_elements::editable_text::text_area;
+//! # fn test() -> gpui_ce_elements::editable_text::EditableTextElement {
+//! use gpui_ce_elements::editable_text::text_area;
 //! text_area("message")
 //!     .placeholder("empty text")
-//!     .border_1().rounded_lg().border_color(Hsla::white()) // has a border
+//!     .border_1().rounded_lg().border_color(gpui::white()) // has a border
 //!     .p_2() // padding between the text and border
 //!     .min_w_10().max_w_128()
 //!     .min_h_24().max_h_128()
@@ -75,8 +75,8 @@
 //! or some way to detect "focus lost" to signify the user leaving the field.
 //! ```
 //! # use gpui::{prelude::*, App, Entity, Window, AppContext, ElementId};
-//! # fn test(window: &mut Window, cx: &mut App) -> gpui_elements::editable_text::EditableTextElement {
-//! use gpui_elements::editable_text::{text_input, EditableTextState, TextChanged};
+//! # fn test(window: &mut Window, cx: &mut App) -> gpui_ce_elements::editable_text::EditableTextElement {
+//! use gpui_ce_elements::editable_text::{text_input, EditableTextState, TextChanged};
 //!
 //! // A unique id to the editable text element within the outer scope.
 //! let id = ElementId::from("my_input");
@@ -98,8 +98,8 @@
 //! You can configure the default value of the editable text by using [`use_keyed_init`]:
 //! ```
 //! # use gpui::{prelude::*, App, Entity, Window, AppContext, ElementId};
-//! # use gpui_elements::editable_text::{text_input, EditableTextState, StringStorage};
-//! # fn test(window: &mut Window, cx: &mut App) -> gpui_elements::editable_text::EditableTextElement {
+//! # use gpui_ce_elements::editable_text::{text_input, EditableTextState, StringStorage};
+//! # fn test(window: &mut Window, cx: &mut App) -> gpui_ce_elements::editable_text::EditableTextElement {
 //! let id = ElementId::from("my_input");
 //!
 //! // The function parameter will only be called when the state is created/initialized.
@@ -118,8 +118,8 @@
 //! To use a blinking caret, you can use one of the templated functions:
 //! ```
 //! # use gpui::{prelude::*, App, Entity, Window, AppContext, ElementId};
-//! # fn test(window: &mut Window, cx: &mut App) -> gpui_elements::editable_text::EditableTextElement {
-//! use gpui_elements::editable_text::{text_input};
+//! # fn test(window: &mut Window, cx: &mut App) -> gpui_ce_elements::editable_text::EditableTextElement {
+//! use gpui_ce_elements::editable_text::{text_input};
 //! let id = ElementId::from("my_input");
 //! text_input(id)
 //!     .caret_blink_interval_500ms()
@@ -131,8 +131,8 @@
 //! or construct a caret entity with a blinking interval when constructing the state:
 //! ```
 //! # use gpui::{prelude::*, App, Entity, Window, AppContext, ElementId};
-//! # fn test(window: &mut Window, cx: &mut App) -> gpui_elements::editable_text::EditableTextElement {
-//! use gpui_elements::editable_text::{text_input, EditableTextState, TextChanged, Caret};
+//! # fn test(window: &mut Window, cx: &mut App) -> gpui_ce_elements::editable_text::EditableTextElement {
+//! use gpui_ce_elements::editable_text::{text_input, EditableTextState, TextChanged, Caret};
 //! let id = ElementId::from("my_input");
 //!
 //! let state = EditableTextState::use_keyed(id.clone(), window, cx);

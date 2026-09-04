@@ -9,7 +9,7 @@ use refineable::Refineable;
 use schemars::{JsonSchema, json_schema};
 use serde::{Deserialize, Deserializer, Serialize, Serializer, de};
 use std::borrow::Cow;
-use std::ops::Range;
+use std::ops::{AddAssign, Range};
 use std::{
     cmp::{self, PartialOrd},
     fmt::{self, Display},
@@ -488,6 +488,20 @@ where
             y: self.height.half(),
         }
     }
+
+    /// Returns a point at an anchor along the imaginary edge of a box with this size.
+    pub fn at_anchor(&self, anchor: Anchor) -> Point<T> {
+        match anchor {
+            Anchor::TopLeft => Point::new(T::default(), T::default()),
+            Anchor::TopRight => Point::new(self.width.clone(), T::default()),
+            Anchor::BottomLeft => Point::new(T::default(), self.height.clone()),
+            Anchor::BottomRight => Point::new(self.width.clone(), self.height.clone()),
+            Anchor::TopCenter => Point::new(self.width.half(), T::default()),
+            Anchor::BottomCenter => Point::new(self.width.half(), self.height.clone()),
+            Anchor::LeftCenter => Point::new(T::default(), self.height.half()),
+            Anchor::RightCenter => Point::new(self.width.clone(), self.height.half()),
+        }
+    }
 }
 
 impl Size<Pixels> {
@@ -847,41 +861,10 @@ impl<T> Bounds<T>
 where
     T: Sub<Output = T> + Half + Clone + Debug + Default + PartialEq,
 {
-    /// Constructs a `Bounds` from a corner point and size. The specified corner will be placed at
-    /// the specified origin.
+    /// Constructs a `Bounds` from a corner point and size, where the new origin is the point
+    /// at the anchor along the edges of size subtracted from the original origin.
     pub fn from_anchor_and_size(corner: Anchor, origin: Point<T>, size: Size<T>) -> Bounds<T> {
-        let origin = match corner {
-            Anchor::TopLeft => origin,
-            Anchor::TopRight => Point {
-                x: origin.x - size.width.clone(),
-                y: origin.y,
-            },
-            Anchor::BottomLeft => Point {
-                x: origin.x,
-                y: origin.y - size.height.clone(),
-            },
-            Anchor::BottomRight => Point {
-                x: origin.x - size.width.clone(),
-                y: origin.y - size.height.clone(),
-            },
-            Anchor::TopCenter => Point {
-                x: origin.x - size.width.half(),
-                y: origin.y,
-            },
-            Anchor::BottomCenter => Point {
-                x: origin.x - size.width.half(),
-                y: origin.y - size.height.clone(),
-            },
-            Anchor::LeftCenter => Point {
-                x: origin.x,
-                y: origin.y - size.height.half(),
-            },
-            Anchor::RightCenter => Point {
-                x: origin.x - size.width.clone(),
-                y: origin.y - size.height.half(),
-            },
-        };
-
+        let origin = origin - size.at_anchor(corner);
         Bounds { origin, size }
     }
 }
@@ -3253,9 +3236,15 @@ impl MulAssign<f32> for ScaledPixels {
 pub struct Rems(pub f32);
 
 impl Rems {
+    /// A length of zero.
+    pub const ZERO: Self = Self(0.0);
     /// Convert this Rem value to pixels.
     pub fn to_pixels(self, rem_size: Pixels) -> Pixels {
         self * rem_size
+    }
+    /// Convert from pixels to Rem
+    pub fn from_pixels(length: Pixels, window: &gpui::Window) -> Self {
+        Self(length / window.rem_size())
     }
 }
 
@@ -3264,6 +3253,12 @@ impl Mul<Pixels> for Rems {
 
     fn mul(self, other: Pixels) -> Pixels {
         Pixels(self.0 * other.0)
+    }
+}
+
+impl AddAssign<Rems> for Rems {
+    fn add_assign(&mut self, rhs: Rems) {
+        self.0 += rhs.0
     }
 }
 
