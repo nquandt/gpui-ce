@@ -1,9 +1,18 @@
 use gpui::{App, Bounds, Pixels, SharedString, Window};
 use raw_window_handle::{HasWindowHandle, RawWindowHandle};
+use std::cell::RefCell;
+use std::rc::Rc;
 use std::sync::{Arc, Mutex};
 
 use super::PlatformWebView;
 use crate::webview::WebViewConfig;
+
+/// Shared cell holding the current navigation-interception callback. Wry
+/// registers its navigation handler once at webview creation, but the
+/// `WebView` element (and its `on_navigation` closure) is rebuilt every
+/// frame, so the native handler reads through this cell instead of
+/// capturing a closure directly.
+type NavigationHandler = Rc<RefCell<Option<Box<dyn FnMut(&str) -> bool>>>>;
 
 struct RawWindowHandleWrapper(RawWindowHandle);
 
@@ -17,6 +26,7 @@ impl HasWindowHandle for RawWindowHandleWrapper {
 
 pub(crate) struct WryWebView {
     webview: wry::WebView,
+    navigation_handler: NavigationHandler,
 }
 
 impl WryWebView {
@@ -50,6 +60,27 @@ impl WryWebView {
         if config.devtools {
             builder = builder.with_devtools(true);
         }
+
+        // Scripts a consumer wants evaluated before any page script runs on
+        // every navigation (analytics shims, polyfills, a future typed IPC
+        // preload, etc). Order matches `WebView::init_script` call order.
+        for script in &config.init_scripts {
+            builder = builder.with_initialization_script(script.as_str());
+        }
+
+        let navigation_handler: NavigationHandler = Rc::new(RefCell::new(None));
+        let navigation_handler_for_builder = navigation_handler.clone();
+        builder = builder.with_navigation_handler(move |url| {
+            match navigation_handler_for_builder.borrow_mut().as_mut() {
+                Some(callback) => callback(&url),
+                None => true,
+            }
+        });
+
+        // NOTE(ipc): this is where a future JS<->Rust IPC bridge's own
+        // initialization script and `with_ipc_handler` registration would be
+        // wired in, ahead of any consumer-supplied init scripts above so the
+        // bridge is always available to page code.
 
         // Wake the owning GPUI window whenever the webview starts or finishes a
         // page load, so its URL-detection poll runs promptly. Without this, the
@@ -94,7 +125,16 @@ impl WryWebView {
             let _ = webview.zoom(config.zoom as f64);
         }
 
-        WryWebView { webview }
+        WryWebView {
+            webview,
+            navigation_handler,
+        }
+    }
+
+    /// The underlying wry webview, for capabilities this crate doesn't wrap
+    /// yet. Reached publicly via `WebViewHandle::native()`.
+    pub(crate) fn raw(&self) -> &wry::WebView {
+        &self.webview
     }
 }
 
@@ -182,6 +222,14 @@ impl PlatformWebView for WryWebView {
 
     fn focus(&self) {
         let _ = self.webview.focus();
+    }
+
+    fn set_navigation_handler(&self, handler: Option<Box<dyn FnMut(&str) -> bool>>) {
+        *self.navigation_handler.borrow_mut() = handler;
+    }
+
+    fn as_any(&self) -> &dyn std::any::Any {
+        self
     }
 }
 

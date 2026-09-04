@@ -71,4 +71,18 @@ impl WebViewHandle {
     pub fn focus(&self) {
         self.inner.focus();
     }
+
+    /// Access the underlying `wry::WebView` for capabilities this crate
+    /// doesn't wrap yet (custom protocol handlers, download handlers,
+    /// platform-specific extension traits, and so on).
+    ///
+    /// Returns `None` if the "webview" feature is disabled, or if a future
+    /// non-wry backend is active.
+    #[cfg(feature = "webview")]
+    pub fn native(&self) -> Option<&wry::WebView> {
+        self.inner
+            .as_any()
+            .downcast_ref::<crate::platform::WryWebView>()
+            .map(|webview| webview.raw())
+    }
 }
