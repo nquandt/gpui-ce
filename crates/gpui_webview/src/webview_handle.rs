@@ -1,4 +1,4 @@
-use gpui::{SharedString};
+use gpui::SharedString;
 use std::rc::Rc;
 
 use crate::platform::PlatformWebView;

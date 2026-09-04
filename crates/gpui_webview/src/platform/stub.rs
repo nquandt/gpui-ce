@@ -1,6 +1,6 @@
-use gpui::{Bounds, Pixels, SharedString, Window, App};
 use super::PlatformWebView;
 use crate::webview::WebViewConfig;
+use gpui::{App, Bounds, Pixels, SharedString, Window};
 
 pub(crate) struct StubWebView;
 

@@ -21,10 +21,10 @@ members = [
   "./crates/gpui_zed_util/",
   "./crates/gpui_ce_util/",
   "./crates/gpui_path/",
+  "./crates/gpui_webview/",
   "./tooling/perf/",
   "./examples/browser/",
   "./crates/gpui_mobile/",
-  "./crates/gpui_webview/",
 ]
 default-members = ["./crates/gpui/"]
 resolver = "3"
@@ -203,7 +203,7 @@ gpui_macros = { path = "./crates/gpui_macros/", version = "0.1.0", package = "gp
 gpui_shared_string = { path = "./crates/gpui_shared_string/", version = "0.1.0", package = "gpui_ce_shared_string" }
 gpui_tokio = { path = "./crates/gpui_tokio/", version = "0.1.0", package = "gpui_ce_tokio" }
 gpui_mobile = { path = "./crates/gpui_mobile/", version = "0.1.0" }
-gpui_webview = { path = "./crates/gpui_webview/", version = "0.1.0" }
+gpui_webview = { path = "./crates/gpui_webview/", version = "0.1.0", package = "gpui_ce_webview" }
 
 wry = "0.55"
 

@@ -851,7 +851,7 @@ dependencies = [
  "gpui-ce",
  "gpui_ce_elements",
  "gpui_ce_platform",
- "gpui_webview",
+ "gpui_ce_webview",
 ]
 
 [[package]]
@@ -3114,6 +3114,17 @@ dependencies = [
 ]
 
 [[package]]
+name = "gpui_ce_webview"
+version = "0.1.0"
+dependencies = [
+ "gpui-ce",
+ "gpui_ce_elements",
+ "gpui_ce_platform",
+ "raw-window-handle",
+ "wry",
+]
+
+[[package]]
 name = "gpui_ce_wgpu"
 version = "0.1.0"
 dependencies = [
@@ -3241,15 +3252,6 @@ dependencies = [
  "uuid",
  "wgpu",
  "zed-font-kit",
-]
-
-[[package]]
-name = "gpui_webview"
-version = "0.1.0"
-dependencies = [
- "gpui-ce",
- "raw-window-handle",
- "wry",
 ]
 
 [[package]]
