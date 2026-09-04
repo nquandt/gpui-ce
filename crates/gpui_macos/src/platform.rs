@@ -3,7 +3,7 @@
 use crate::{
     BoolExt, MacDispatcher, MacDisplay, MacKeyboardLayout, MacKeyboardMapper, MacWindow,
     events::key_to_native, haptic_feedback::MacHaptics, ns_string, pasteboard::Pasteboard,
-    renderer, set_active_window_cursor_style,
+    disable_active_window_cursor_style, renderer, set_active_window_cursor_style,
 };
 use anyhow::{Context as _, anyhow};
 use block::ConcreteBlock;
@@ -1110,6 +1110,12 @@ impl Platform for MacPlatform {
     fn set_cursor_style(&self, style: CursorStyle) {
         unsafe {
             set_active_window_cursor_style(style);
+        }
+    }
+
+    fn disable_cursor_style(&self) {
+        unsafe {
+            disable_active_window_cursor_style();
         }
     }
 

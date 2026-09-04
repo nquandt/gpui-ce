@@ -734,7 +734,10 @@ pub(crate) type AnyMouseListener =
 #[derive(Clone)]
 pub(crate) struct CursorStyleRequest {
     pub(crate) hitbox_id: Option<HitboxId>,
-    pub(crate) style: CursorStyle,
+    /// `None` means the region manages its own cursor (e.g. a native platform
+    /// view layered on top, like a webview) and GPUI should not assert a
+    /// cursor style over it.
+    pub(crate) style: Option<CursorStyle>,
 }
 
 #[derive(Default, Eq, PartialEq)]
@@ -1072,7 +1075,12 @@ impl Frame {
         }
     }
 
-    pub(crate) fn cursor_style(&self, window: &Window) -> Option<CursorStyle> {
+    /// Resolves the cursor style for the current frame. Returns `None` if no
+    /// request matched the hovered hitboxes (callers should fall back to the
+    /// default cursor). Returns `Some(None)` if a matching request explicitly
+    /// opted the region out of GPUI's cursor management (see
+    /// `Window::disable_cursor_style`).
+    pub(crate) fn cursor_style(&self, window: &Window) -> Option<Option<CursorStyle>> {
         self.cursor_styles
             .iter()
             .rev()
@@ -3579,7 +3587,21 @@ impl Window {
         self.invalidator.debug_assert_paint();
         self.next_frame.cursor_styles.push(CursorStyleRequest {
             hitbox_id: Some(hitbox.id),
-            style,
+            style: Some(style),
+        });
+    }
+
+    /// Opts a hitbox's region out of GPUI's cursor management entirely, so that
+    /// GPUI will not assert any cursor style while the mouse hovers it. Use this
+    /// for regions covered by a native platform view (e.g. an embedded webview)
+    /// that manages its own cursor, so GPUI doesn't fight it by repeatedly
+    /// resetting the cursor to the platform default. This method should only be
+    /// called during the paint phase of element drawing.
+    pub fn disable_cursor_style(&mut self, hitbox: &Hitbox) {
+        self.invalidator.debug_assert_paint();
+        self.next_frame.cursor_styles.push(CursorStyleRequest {
+            hitbox_id: Some(hitbox.id),
+            style: None,
         });
     }
 
@@ -3591,7 +3613,7 @@ impl Window {
         self.invalidator.debug_assert_paint();
         self.next_frame.cursor_styles.push(CursorStyleRequest {
             hitbox_id: None,
-            style,
+            style: Some(style),
         })
     }
 
@@ -5204,11 +5226,13 @@ impl Window {
     fn reset_cursor_style(&self, cx: &mut App) {
         // Set the cursor only if we're the active window.
         if self.is_window_hovered() {
-            let style = self
-                .rendered_frame
-                .cursor_style(self)
-                .unwrap_or(CursorStyle::Arrow);
-            cx.platform.set_cursor_style(style);
+            match self.rendered_frame.cursor_style(self) {
+                // A hitbox explicitly opted out of cursor management (e.g. a
+                // native webview manages its own cursor there).
+                Some(None) => cx.platform.disable_cursor_style(),
+                Some(Some(style)) => cx.platform.set_cursor_style(style),
+                None => cx.platform.set_cursor_style(CursorStyle::Arrow),
+            }
         }
     }
 

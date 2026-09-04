@@ -1,6 +1,7 @@
 use gpui::{
-    App, Bounds, Element, ElementId, GlobalElementId, InspectorElementId, IntoElement, LayoutId,
-    Pixels, Refineable, SharedString, Style, StyleRefinement, Styled, Window,
+    App, Bounds, Element, ElementId, GlobalElementId, Hitbox, HitboxBehavior, InspectorElementId,
+    IntoElement, LayoutId, Pixels, Refineable, SharedString, Style, StyleRefinement, Styled,
+    Window,
 };
 use std::rc::Rc;
 
@@ -202,7 +203,7 @@ impl IntoElement for WebView {
 
 impl Element for WebView {
     type RequestLayoutState = Style;
-    type PrepaintState = Option<WebViewHandle>;
+    type PrepaintState = (Option<WebViewHandle>, Hitbox);
 
     fn id(&self) -> Option<ElementId> {
         Some(self.element_id())
@@ -234,7 +235,12 @@ impl Element for WebView {
         window: &mut Window,
         cx: &mut App,
     ) -> Self::PrepaintState {
-        window.with_optional_element_state::<WebViewState, Option<WebViewHandle>>(
+        // The native webview manages its own cursor (e.g. showing a pointer
+        // over links); this hitbox lets us opt its region out of GPUI's own
+        // cursor management so the two don't fight each other.
+        let hitbox = window.insert_hitbox(bounds, HitboxBehavior::Normal);
+
+        let handle = window.with_optional_element_state::<WebViewState, Option<WebViewHandle>>(
             id,
             |state, window| {
                 let is_first_creation = !matches!(state, Some(Some(_)));
@@ -325,7 +331,9 @@ impl Element for WebView {
 
                 (Some(handle), Some(webview_state))
             },
-        )
+        );
+
+        (handle, hitbox)
     }
 
     fn paint(
@@ -334,11 +342,14 @@ impl Element for WebView {
         _inspector_id: Option<&InspectorElementId>,
         _bounds: Bounds<Pixels>,
         _request_layout: &mut Self::RequestLayoutState,
-        _prepaint: &mut Self::PrepaintState,
-        _window: &mut Window,
+        prepaint: &mut Self::PrepaintState,
+        window: &mut Window,
         _cx: &mut App,
     ) {
-        // Native webview renders itself via the OS compositor.
+        // Native webview renders itself via the OS compositor. Leave cursor
+        // management to it while the mouse is over its bounds.
+        let (_, hitbox) = prepaint;
+        window.disable_cursor_style(hitbox);
     }
 }
 

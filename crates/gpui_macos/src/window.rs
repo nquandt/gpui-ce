@@ -756,6 +756,24 @@ pub(crate) fn convert_mouse_position(position: NSPoint, window_height: Pixels) -
 /// thread because it reads the active AppKit window and updates GPUI window state associated
 /// with Objective-C objects.
 pub(crate) unsafe fn set_active_window_cursor_style(style: CursorStyle) {
+    unsafe { set_active_window_cursor_style_inner(Some(style)) }
+}
+
+/// Opts the active window out of cursor management entirely (see
+/// `WindowState::cursor_style`), for regions covered by a native view (e.g.
+/// an embedded webview) that manages its own cursor.
+///
+/// This function is not thread safe. Callers must ensure this is called on the AppKit main
+/// thread because it reads the active AppKit window and updates GPUI window state associated
+/// with Objective-C objects.
+pub(crate) unsafe fn disable_active_window_cursor_style() {
+    unsafe { set_active_window_cursor_style_inner(None) }
+}
+
+/// This function is not thread safe. Callers must ensure this is called on the AppKit main
+/// thread because it reads the active AppKit window and updates GPUI window state associated
+/// with Objective-C objects.
+unsafe fn set_active_window_cursor_style_inner(style: Option<CursorStyle>) {
     // SAFETY: The caller guarantees AppKit main-thread access. `is_gpui_window` ensures the
     // window has our WINDOW_STATE_IVAR before reading it.
     unsafe {
@@ -1018,7 +1036,10 @@ struct MacWindowState {
     native_view: NonNull<Object>,
     blurred_view: Option<id>,
     background_appearance: WindowBackgroundAppearance,
-    cursor_style: CursorStyle,
+    /// `None` means the region under the mouse is managed by a native view
+    /// layered on top (e.g. an embedded webview), so `resetCursorRects` skips
+    /// asserting a cursor for the window.
+    cursor_style: Option<CursorStyle>,
     cursor_visible: Arc<AtomicBool>,
     frame_source: Option<WindowFrameSource>,
     renderer: renderer::Renderer,
@@ -1449,7 +1470,7 @@ impl MacWindow {
                 native_view: NonNull::new_unchecked(native_view),
                 blurred_view: None,
                 background_appearance: WindowBackgroundAppearance::Opaque,
-                cursor_style: CursorStyle::Arrow,
+                cursor_style: Some(CursorStyle::Arrow),
                 cursor_visible,
                 frame_source: None,
                 renderer: renderer::new_renderer(
@@ -2719,6 +2740,12 @@ extern "C" fn reset_cursor_rects(this: &Object, _: Sel) {
 
         let window_state = get_window_state(this);
         let cursor_style = window_state.lock().cursor_style;
+
+        let Some(cursor_style) = cursor_style else {
+            // A native view layered on top (e.g. a webview) manages its own
+            // cursor for the hovered region — don't assert one here.
+            return;
+        };
 
         let cursor: id = match cursor_style {
             CursorStyle::Arrow => msg_send![class!(NSCursor), arrowCursor],
