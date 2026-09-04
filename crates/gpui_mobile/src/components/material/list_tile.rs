@@ -7,7 +7,7 @@
 //! - **Divider** — a thin horizontal separator line
 //! - **Badge** — a small status indicator (dot or text pill)
 //! - **Tooltip** — a text label that appears on hover/press
-//! - **SegmentedButton** — a group of togglable segments
+//! - **SegmentedButton** — a group of toggleable segments
 //! - **Chip** — compact elements: Assist, Filter, Input, Suggestion
 //! - **BottomAppBar** — a bottom bar with icons and an optional FAB
 //! - **ExpansionTile** — a collapsible list tile with children

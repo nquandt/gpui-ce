@@ -49,3 +49,8 @@ backgrund = "backgrund"
 wtach = "wtach"
 netwrok = "netwrok"
 workspce = "workspce"
+# Deliberately misspelled TextField test fixtures (insert/backspace/unicode-boundary cases)
+helo = "helo"
+caf = "caf"
+# JNI type signature fragment (I = int, Z = boolean), not a word
+IZ = "IZ"
