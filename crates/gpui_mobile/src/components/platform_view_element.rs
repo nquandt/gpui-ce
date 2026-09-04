@@ -18,7 +18,7 @@
 //! ```
 
 use crate::platform_view::{PlatformViewBounds, PlatformViewHandle};
-use gpui::{div, ParentElement, Styled};
+use gpui::{ParentElement, Styled, div};
 use std::sync::Arc;
 
 /// Create a GPUI element that hosts a native platform view.

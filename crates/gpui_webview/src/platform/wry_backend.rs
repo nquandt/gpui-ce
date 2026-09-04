@@ -97,11 +97,12 @@ impl WryWebView {
 
         let navigation_handler: NavigationHandler = Rc::new(RefCell::new(None));
         let navigation_handler_for_builder = navigation_handler.clone();
-        builder = builder.with_navigation_handler(move |url| {
-            match navigation_handler_for_builder.borrow_mut().as_mut() {
-                Some(callback) => callback(&url),
-                None => true,
-            }
+        builder = builder.with_navigation_handler(move |url| match navigation_handler_for_builder
+            .borrow_mut()
+            .as_mut()
+        {
+            Some(callback) => callback(&url),
+            None => true,
         });
 
         // Wake the owning GPUI window whenever the webview starts or finishes a

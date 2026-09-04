@@ -331,12 +331,12 @@ pub mod android;
 // ── public re-exports ────────────────────────────────────────────────────────
 
 #[cfg(target_os = "ios")]
-pub use ios::{current_platform, IosPlatform};
+pub use ios::{IosPlatform, current_platform};
 
 #[cfg(target_os = "android")]
-pub use android::{current_platform, AndroidPlatform};
+pub use android::{AndroidPlatform, current_platform};
 
-pub use target_platform::{target_platform, TargetPlatform, DEFAULT_PLATFORM};
+pub use target_platform::{DEFAULT_PLATFORM, TargetPlatform, target_platform};
 
 // ── fallback for non-mobile host builds (e.g. documentation / CI) ────────────
 

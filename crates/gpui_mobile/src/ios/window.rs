@@ -10,15 +10,15 @@
 //! whose view hosts a CAMetalLayer. Rendering is performed by
 //! `gpui_wgpu::WgpuRenderer` which drives wgpu over the Metal backend.
 
-use super::events::*;
 use super::IosDisplay;
+use super::events::*;
 use crate::momentum::{MomentumScroller, VelocityTracker};
 use gpui::{
-    point, px, size, AnyWindowHandle, AtlasKey, AtlasTextureId, AtlasTextureKind, AtlasTile,
-    Bounds, Capslock, DevicePixels, DispatchEventResult, GpuSpecs, Modifiers, Pixels,
-    PlatformAtlas, PlatformDisplay, PlatformInput, PlatformInputHandler, PlatformWindow, Point,
-    PromptButton, PromptLevel, RequestFrameOptions, Scene, Size, TileId, WindowAppearance,
-    WindowBackgroundAppearance, WindowBounds, WindowControlArea, WindowParams,
+    AnyWindowHandle, AtlasKey, AtlasTextureId, AtlasTextureKind, AtlasTile, Bounds, Capslock,
+    DevicePixels, DispatchEventResult, GpuSpecs, Modifiers, Pixels, PlatformAtlas, PlatformDisplay,
+    PlatformInput, PlatformInputHandler, PlatformWindow, Point, PromptButton, PromptLevel,
+    RequestFrameOptions, Scene, Size, TileId, WindowAppearance, WindowBackgroundAppearance,
+    WindowBounds, WindowControlArea, WindowParams, point, px, size,
 };
 use gpui_wgpu::{GpuContext, WgpuContext, WgpuRenderer, WgpuSurfaceConfig};
 use objc2::encode::{Encode, Encoding, RefEncode};

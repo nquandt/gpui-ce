@@ -111,7 +111,10 @@ impl EditableTextHistory {
         }
     }
 
-    fn stack_mut(&mut self, kind: HistoryKind) -> &mut SmallVec<[HistoryEntry; INLINE_HISTORY_CAPACITY]> {
+    fn stack_mut(
+        &mut self,
+        kind: HistoryKind,
+    ) -> &mut SmallVec<[HistoryEntry; INLINE_HISTORY_CAPACITY]> {
         match kind {
             HistoryKind::Undo => &mut self.undo_stack,
             HistoryKind::Redo => &mut self.redo_stack,

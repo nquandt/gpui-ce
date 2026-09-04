@@ -2,8 +2,8 @@
 
 use crate::{
     BoolExt, MacDispatcher, MacDisplay, MacKeyboardLayout, MacKeyboardMapper, MacWindow,
-    events::key_to_native, haptic_feedback::MacHaptics, ns_string, pasteboard::Pasteboard,
-    disable_active_window_cursor_style, renderer, set_active_window_cursor_style,
+    disable_active_window_cursor_style, events::key_to_native, haptic_feedback::MacHaptics,
+    ns_string, pasteboard::Pasteboard, renderer, set_active_window_cursor_style,
 };
 use anyhow::{Context as _, anyhow};
 use block::ConcreteBlock;

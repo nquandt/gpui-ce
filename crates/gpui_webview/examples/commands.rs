@@ -10,8 +10,8 @@ use std::{
 };
 
 use gpui::{
-    App, Bounds, ClickEvent, Context, Render, Window, WindowBounds, WindowOptions, div,
-    prelude::*, px, rgb, size,
+    App, Bounds, ClickEvent, Context, Render, Window, WindowBounds, WindowOptions, div, prelude::*,
+    px, rgb, size,
 };
 use gpui_webview::{IpcRequest, IpcResult, WebViewHandle, ok, webview};
 use serde::Deserialize;
@@ -35,7 +35,11 @@ fn run_command(state: &AppState, request: &IpcRequest) -> IpcResult {
     match request.cmd.as_ref() {
         "greet" => {
             let args: GreetArgs = request.payload().map_err(|err| err.to_string())?;
-            let name = if args.name.is_empty() { "world" } else { &args.name };
+            let name = if args.name.is_empty() {
+                "world"
+            } else {
+                &args.name
+            };
             ok(json!({ "message": format!("Hello, {name}! This reply came from native Rust.") }))
         }
         "increment_counter" => {
@@ -114,10 +118,12 @@ impl Render for CommandsDemo {
                             .text_color(rgb(0x1e1e2e))
                             .cursor_pointer()
                             .child("Emit native-event")
-                            .on_click(cx.listener(move |this, _event: &ClickEvent, _window, _cx| {
-                                this.state.counter.fetch_add(1, Ordering::SeqCst);
-                                this.broadcast_from_native();
-                            })),
+                            .on_click(cx.listener(
+                                move |this, _event: &ClickEvent, _window, _cx| {
+                                    this.state.counter.fetch_add(1, Ordering::SeqCst);
+                                    this.broadcast_from_native();
+                                },
+                            )),
                     ),
             )
             .child(

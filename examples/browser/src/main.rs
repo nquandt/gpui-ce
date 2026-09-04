@@ -35,18 +35,20 @@ impl Browser {
         if text.is_empty() {
             return;
         }
-        let has_scheme = text
-            .split_once(':')
-            .is_some_and(|(scheme, _)| {
-                scheme
+        let has_scheme = text.split_once(':').is_some_and(|(scheme, _)| {
+            scheme
+                .chars()
+                .next()
+                .is_some_and(|c| c.is_ascii_alphabetic())
+                && scheme
                     .chars()
-                    .next()
-                    .is_some_and(|c| c.is_ascii_alphabetic())
-                    && scheme
-                        .chars()
-                        .all(|c| c.is_ascii_alphanumeric() || matches!(c, '+' | '-' | '.'))
-            });
-        let url = if has_scheme { text } else { format!("https://{text}") };
+                    .all(|c| c.is_ascii_alphanumeric() || matches!(c, '+' | '-' | '.'))
+        });
+        let url = if has_scheme {
+            text
+        } else {
+            format!("https://{text}")
+        };
         if let Some(handle) = self.webview_handle.borrow().as_ref() {
             handle.load_url(&url);
         }
