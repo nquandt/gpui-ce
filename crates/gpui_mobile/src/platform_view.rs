@@ -24,10 +24,11 @@
 //!
 //! ## Usage
 //!
-//! ```rust,no_run
+//! ```rust,ignore
 //! use gpui_mobile::platform_view::{PlatformViewRegistry, PlatformViewParams};
 //!
-//! // Register a factory (typically in package init)
+//! // Register a factory (typically in package init); `MyVideoFactory` is a
+//! // `PlatformViewFactory` implementation the app provides.
 //! PlatformViewRegistry::global().register("video_player", Box::new(MyVideoFactory));
 //!
 //! // Create a view
