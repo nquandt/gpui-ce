@@ -31,10 +31,14 @@ fn build(_window: &mut Window, cx: &mut App) -> AnyView {
         let mut this = MediaScreen {
             video: None,
             video_status: String::new(),
+            video_duration_ms: 0,
+            video_playing: false,
             tone_audio: None,
             tone_status: String::new(),
+            tone_playing: false,
             remote_audio: None,
             remote_status: String::new(),
+            remote_playing: false,
             session_log: Vec::new(),
         };
         this.init_video();
@@ -61,12 +65,33 @@ fn build(_window: &mut Window, cx: &mut App) -> AnyView {
 struct MediaScreen {
     video: Option<VideoPlayer>,
     video_status: String,
+    video_duration_ms: u64,
+    video_playing: bool,
     tone_audio: Option<AudioPlayer>,
     tone_status: String,
+    tone_playing: bool,
     remote_audio: Option<AudioPlayer>,
     remote_status: String,
+    remote_playing: bool,
     session_log: Vec<String>,
 }
+
+/// `VideoPlayer::position/duration` and `AudioPlayer::position/duration/state`
+/// all crash the whole process on iOS: their native implementations call
+/// `msg_send![player, currentTime]` expecting the Objective-C runtime to
+/// return a `CMTime` struct by value, but the `Encode` impl doesn't match
+/// what `objc_msgSend` actually does for a struct this size, so the runtime
+/// aborts with "invalid message send" — and since this crate builds with
+/// panic=abort, it's not catchable, not a `Result::Err`, it just kills the
+/// app. See crates/gpui_mobile/src/packages/video_player/ios.rs:171-174 and
+/// crates/gpui_mobile/src/packages/audio/ios.rs:240-251,290-300. This screen
+/// therefore never calls those three functions — everything below tracks
+/// playback state locally instead (button taps + the duration reported once
+/// by `set_url`/`set_file_path`, which do not hit this path).
+const CMTIME_CRASH_NOTE: &str = "position()/duration()/state() are not called here — they crash \
+     the whole app on iOS (msg_send returning CMTime by value has a mismatched Encode impl in \
+     gpui_mobile; see video_player/ios.rs:171 and audio/ios.rs:240,290). Play/Pause/Stop below \
+     just track local button-tap state instead.";
 
 /// Write a minimal 44-byte canonical PCM WAV header followed by a 440Hz
 /// sine tone, 3 seconds, mono, 16-bit, 44100Hz.
@@ -110,6 +135,7 @@ impl MediaScreen {
                             "loaded: {}x{}, {}ms",
                             info.width, info.height, info.duration_ms
                         );
+                        self.video_duration_ms = info.duration_ms;
                     }
                     Err(e) => self.video_status = format!("set_url error: {e}"),
                 }
@@ -133,44 +159,6 @@ impl Render for MediaScreen {
     fn render(&mut self, _window: &mut Window, cx: &mut Context<Self>) -> impl IntoElement {
         self.ensure_surface();
 
-        let (position_ms, duration_ms, playing) = if let Some(v) = self.video.as_ref() {
-            (
-                v.position().unwrap_or(0),
-                v.duration().unwrap_or(0),
-                v.is_playing().unwrap_or(false),
-            )
-        } else {
-            (0, 0, false)
-        };
-
-        let (tone_state, tone_pos, tone_dur) = if let Some(a) = self.tone_audio.as_ref() {
-            (
-                format!(
-                    "{:?}",
-                    a.state()
-                        .unwrap_or(gpui_mobile::packages::audio::PlayerState::Idle)
-                ),
-                a.position().unwrap_or(0),
-                a.duration().unwrap_or(0),
-            )
-        } else {
-            ("(not created)".into(), 0, 0)
-        };
-
-        let (remote_state, remote_pos, remote_dur) = if let Some(a) = self.remote_audio.as_ref() {
-            (
-                format!(
-                    "{:?}",
-                    a.state()
-                        .unwrap_or(gpui_mobile::packages::audio::PlayerState::Idle)
-                ),
-                a.position().unwrap_or(0),
-                a.duration().unwrap_or(0),
-            )
-        } else {
-            ("(not created)".into(), 0, 0)
-        };
-
         div()
             .id("media-scroll")
             .overflow_y_scroll()
@@ -180,7 +168,11 @@ impl Render for MediaScreen {
             .gap_3()
             .p_4()
             .child(div().text_color(rgb(0xffffff)).text_size(px(20.0)).child("Media"))
-            .child(note("Video and audio playback via native platform APIs. Readouts refresh every 500ms."))
+            .child(note(
+                "Video and audio playback via native platform APIs. Playback state below is \
+                 tracked locally from button taps, not queried live — see the CMTime crash note \
+                 in each player section.",
+            ))
             .child(
                 section("video_player")
                     .child(note(VIDEO_URL))
@@ -197,32 +189,36 @@ impl Render for MediaScreen {
                                     .unwrap_or_else(|| div().size_full()),
                             ),
                     )
-                    .child(kv("position / duration", format!("{position_ms}ms / {duration_ms}ms")))
-                    .child(kv("playing", playing.to_string()))
+                    .child(kv("duration (from set_url)", format!("{}ms", self.video_duration_ms)))
+                    .child(kv("playing (local)", self.video_playing.to_string()))
+                    .child(note(CMTIME_CRASH_NOTE))
                     .child(row()
                         .child(button("Play", cx.listener(|this, _, _window, cx| {
-                            if let Some(v) = this.video.as_ref()
-                                && let Err(e) = v.play() { this.video_status = format!("play error: {e}"); }
+                            if let Some(v) = this.video.as_ref() {
+                                match v.play() {
+                                    Ok(()) => this.video_playing = true,
+                                    Err(e) => this.video_status = format!("play error: {e}"),
+                                }
+                            }
                             cx.notify();
                         })))
                         .child(button("Pause", cx.listener(|this, _, _window, cx| {
+                            if let Some(v) = this.video.as_ref() {
+                                match v.pause() {
+                                    Ok(()) => this.video_playing = false,
+                                    Err(e) => this.video_status = format!("pause error: {e}"),
+                                }
+                            }
+                            cx.notify();
+                        })))
+                        .child(button("Seek to 0:10", cx.listener(|this, _, _window, cx| {
                             if let Some(v) = this.video.as_ref()
-                                && let Err(e) = v.pause() { this.video_status = format!("pause error: {e}"); }
+                                && let Err(e) = v.seek(10_000) { this.video_status = format!("seek error: {e}"); }
                             cx.notify();
                         })))
-                        .child(button("-10s", cx.listener(|this, _, _window, cx| {
-                            if let Some(v) = this.video.as_ref() {
-                                let pos = v.position().unwrap_or(0);
-                                let new_pos = pos.saturating_sub(10_000);
-                                if let Err(e) = v.seek(new_pos) { this.video_status = format!("seek error: {e}"); }
-                            }
-                            cx.notify();
-                        })))
-                        .child(button("+10s", cx.listener(|this, _, _window, cx| {
-                            if let Some(v) = this.video.as_ref() {
-                                let pos = v.position().unwrap_or(0);
-                                if let Err(e) = v.seek(pos + 10_000) { this.video_status = format!("seek error: {e}"); }
-                            }
+                        .child(button("Seek to 0:30", cx.listener(|this, _, _window, cx| {
+                            if let Some(v) = this.video.as_ref()
+                                && let Err(e) = v.seek(30_000) { this.video_status = format!("seek error: {e}"); }
                             cx.notify();
                         }))))
                     .child(row()
@@ -270,6 +266,7 @@ impl Render for MediaScreen {
                                             match player.set_file_path(&path.to_string_lossy()) {
                                                 Ok(_) => {
                                                     let _ = player.play();
+                                                    this.tone_playing = true;
                                                     this.tone_status = format!("playing {}", path.display());
                                                     gallery_log::push("media: tone audio playing");
                                                 }
@@ -289,18 +286,21 @@ impl Render for MediaScreen {
                     .child(row()
                         .child(button("Pause tone", cx.listener(|this, _, _window, cx| {
                             if let Some(a) = this.tone_audio.as_ref() { let _ = a.pause(); }
+                            this.tone_playing = false;
                             cx.notify();
                         })))
                         .child(button("Resume tone", cx.listener(|this, _, _window, cx| {
                             if let Some(a) = this.tone_audio.as_ref() { let _ = a.play(); }
+                            this.tone_playing = true;
                             cx.notify();
                         })))
                         .child(button("Stop tone", cx.listener(|this, _, _window, cx| {
                             if let Some(a) = this.tone_audio.as_ref() { let _ = a.stop(); }
+                            this.tone_playing = false;
                             cx.notify();
                         }))))
-                    .child(kv("state", tone_state))
-                    .child(kv("position / duration", format!("{tone_pos}ms / {tone_dur}ms")))
+                    .child(kv("playing (local)", self.tone_playing.to_string()))
+                    .child(note(CMTIME_CRASH_NOTE))
                     .child(note(self.tone_status.clone())),
             )
             .child(
@@ -312,6 +312,7 @@ impl Render for MediaScreen {
                                 match player.set_url(REMOTE_MP3_URL) {
                                     Ok(_) => {
                                         let _ = player.play();
+                                        this.remote_playing = true;
                                         this.remote_status = "playing remote file".into();
                                         gallery_log::push("media: remote audio playing");
                                     }
@@ -326,18 +327,21 @@ impl Render for MediaScreen {
                     .child(row()
                         .child(button("Pause remote", cx.listener(|this, _, _window, cx| {
                             if let Some(a) = this.remote_audio.as_ref() { let _ = a.pause(); }
+                            this.remote_playing = false;
                             cx.notify();
                         })))
                         .child(button("Resume remote", cx.listener(|this, _, _window, cx| {
                             if let Some(a) = this.remote_audio.as_ref() { let _ = a.play(); }
+                            this.remote_playing = true;
                             cx.notify();
                         })))
                         .child(button("Stop remote", cx.listener(|this, _, _window, cx| {
                             if let Some(a) = this.remote_audio.as_ref() { let _ = a.stop(); }
+                            this.remote_playing = false;
                             cx.notify();
                         }))))
-                    .child(kv("state", remote_state))
-                    .child(kv("position / duration", format!("{remote_pos}ms / {remote_dur}ms")))
+                    .child(kv("playing (local)", self.remote_playing.to_string()))
+                    .child(note(CMTIME_CRASH_NOTE))
                     .child(note(self.remote_status.clone())),
             )
             .child(

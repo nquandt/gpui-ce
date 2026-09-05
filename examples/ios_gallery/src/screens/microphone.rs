@@ -185,11 +185,16 @@ fn amplitude_bar(amplitude: f64) -> impl IntoElement {
 impl Render for MicrophoneScreen {
     fn render(&mut self, _window: &mut Window, cx: &mut Context<Self>) -> impl IntoElement {
         let permission = permission_handler::check_permission(Permission::Microphone);
+        // NOTE: AudioPlayer::state()/position()/duration() are not called here —
+        // on iOS they crash the whole process (msg_send returning a CMTime
+        // struct by value has a mismatched Encode impl in gpui_mobile; see
+        // crates/gpui_mobile/src/packages/audio/ios.rs:240,253,290). is_playing()
+        // only returns a scalar and is safe.
         let player_state = self
             .player
             .as_ref()
-            .and_then(|p| p.state().ok())
-            .map(|s| format!("{s:?}"))
+            .and_then(|p| p.is_playing().ok())
+            .map(|playing| if playing { "playing" } else { "not playing" }.to_string())
             .unwrap_or_else(|| "(none)".into());
 
         div()
