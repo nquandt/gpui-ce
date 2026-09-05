@@ -85,24 +85,18 @@ impl Render for ColorsShapesScreen {
                 section("Box shadows").child(
                     row()
                         .flex_wrap()
-                        .child(
-                            swatch().bg(rgb(0x2a2a2a)).shadow(vec![
+                        .child(swatch().bg(rgb(0x2a2a2a)).shadow(vec![
                                 BoxShadow::new(px(0.0), px(1.0), gpui::black().opacity(0.4))
                                     .blur_radius(px(2.0)),
-                            ]),
-                        )
-                        .child(
-                            swatch().bg(rgb(0x2a2a2a)).shadow(vec![
+                            ]))
+                        .child(swatch().bg(rgb(0x2a2a2a)).shadow(vec![
                                 BoxShadow::new(px(0.0), px(4.0), gpui::black().opacity(0.4))
                                     .blur_radius(px(8.0)),
-                            ]),
-                        )
-                        .child(
-                            swatch().bg(rgb(0x2a2a2a)).shadow(vec![
+                            ]))
+                        .child(swatch().bg(rgb(0x2a2a2a)).shadow(vec![
                                 BoxShadow::new(px(0.0), px(10.0), gpui::black().opacity(0.5))
                                     .blur_radius(px(20.0)),
-                            ]),
-                        ),
+                            ])),
                 ),
             )
             .child(
