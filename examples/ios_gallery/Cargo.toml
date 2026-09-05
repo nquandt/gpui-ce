@@ -1,0 +1,49 @@
+[package]
+name = "ios_gallery"
+version = "0.1.0"
+edition = "2024"
+publish = false
+
+[lib]
+name = "ios_gallery"
+crate-type = ["staticlib"]
+
+[dependencies]
+gpui = { path = "../../crates/gpui/", package = "gpui-ce" }
+gpui_ce_elements = { path = "../../crates/gpui_elements/" }
+gpui_mobile = { path = "../../crates/gpui_mobile/", default-features = false, features = [
+  "url_launcher",
+  "shared_preferences",
+  "path_provider",
+  "package_info",
+  "device_info",
+  "connectivity",
+  "network_info",
+  "vibration",
+  "battery",
+  "share",
+  "sensors",
+  "webview",
+  "text_field",
+  "file_selector",
+  "image_picker",
+  "camera",
+  "permission_handler",
+  "notifications",
+  "location",
+  "audio",
+  "video_player",
+  "clipboard",
+  "local_auth",
+  "in_app_review",
+  "contacts",
+  "maps_launcher",
+  "calendar",
+  "deeplink",
+  "microphone",
+  "maps",
+  "media_session",
+] }
+log.workspace = true
+serde.workspace = true
+serde_json.workspace = true

@@ -525,6 +525,11 @@ enum TouchGestureState {
     Panning {
         touch: ActiveTouch,
         axis: Axis,
+        /// `false` while the axis is provisional: a touch that caught a fling
+        /// starts panning on the fling's axis but re-decides it from its own
+        /// first movement, so a sideways drag that lands on a vertical
+        /// fling's momentum is not locked vertical.
+        axis_locked: bool,
     },
     LongPressing(ActiveTouch),
     TouchDragging(ActiveTouch),
@@ -628,7 +633,11 @@ impl TouchGestureRecognizer {
                             Point::default(),
                             TouchPhase::Started,
                         )));
-                        self.state = TouchGestureState::Panning { touch, axis };
+                        self.state = TouchGestureState::Panning {
+                            touch,
+                            axis,
+                            axis_locked: false,
+                        };
                     } else {
                         self.state = TouchGestureState::Pending {
                             touch,
@@ -670,7 +679,11 @@ impl TouchGestureRecognizer {
                             delta,
                             TouchPhase::Started,
                         )));
-                        self.state = TouchGestureState::Panning { touch, axis };
+                        self.state = TouchGestureState::Panning {
+                            touch,
+                            axis,
+                            axis_locked: true,
+                        };
                     } else {
                         self.state = TouchGestureState::Pending {
                             touch,
@@ -680,7 +693,17 @@ impl TouchGestureRecognizer {
                         };
                     }
                 }
-                TouchGestureState::Panning { mut touch, axis } if touch.id == event.id => {
+                TouchGestureState::Panning {
+                    mut touch,
+                    mut axis,
+                    axis_locked,
+                } if touch.id == event.id => {
+                    if !axis_locked {
+                        let movement = event.position - touch.start_position;
+                        if movement != Point::default() {
+                            axis = dominant_axis(movement);
+                        }
+                    }
                     let mut raw_delta = event.position - touch.last_position;
                     lock_delta_to_axis(&mut raw_delta, axis);
                     if raw_delta != Point::default() {
@@ -709,7 +732,11 @@ impl TouchGestureRecognizer {
                         delta,
                         TouchPhase::Moved,
                     )));
-                    self.state = TouchGestureState::Panning { touch, axis };
+                    self.state = TouchGestureState::Panning {
+                        touch,
+                        axis,
+                        axis_locked: true,
+                    };
                 }
                 TouchGestureState::LongPressing(mut touch) if touch.id == event.id => {
                     touch.last_position = event.position;
@@ -764,7 +791,7 @@ impl TouchGestureRecognizer {
                         },
                     });
                 }
-                TouchGestureState::Panning { touch, axis } if touch.id == event.id => {
+                TouchGestureState::Panning { touch, axis, .. } if touch.id == event.id => {
                     // The release deliberately contributes no velocity
                     // sample: it usually repeats the last movement's position
                     // with a later timestamp, which would dilute the
@@ -1760,6 +1787,59 @@ mod tests {
             panic!("expected scroll, got {recognized:?}");
         };
         assert_eq!(scroll.touch_phase, TouchPhase::Ended);
+    }
+
+    #[test]
+    fn catching_a_fling_re_decides_the_axis_from_the_new_movement() {
+        let mut recognizer = TouchGestureRecognizer::new(GestureTuning::default());
+        let now = Instant::now();
+
+        // A vertical fling leaves momentum behind.
+        recognizer.handle_event_at(
+            &touch_event(TouchId(1), TouchPhase::Started, 100., 300.),
+            now,
+        );
+        for step in 1..=3 {
+            recognizer.handle_event_at(
+                &touch_event(
+                    TouchId(1),
+                    TouchPhase::Moved,
+                    100.,
+                    300. - step as f32 * 33.,
+                ),
+                now + Duration::from_millis(step * 16),
+            );
+        }
+        recognizer.handle_event_at(
+            &touch_event(TouchId(1), TouchPhase::Ended, 100., 200.),
+            now + Duration::from_millis(64),
+        );
+        assert!(recognizer.has_momentum());
+
+        // A new touch catches it, then moves sideways: the pan must follow
+        // the new horizontal movement rather than the fling's vertical axis.
+        recognizer.handle_event_at(
+            &touch_event(TouchId(2), TouchPhase::Started, 100., 200.),
+            now + Duration::from_millis(200),
+        );
+        let recognized = recognizer.handle_event_at(
+            &touch_event(TouchId(2), TouchPhase::Moved, 112., 201.),
+            now + Duration::from_millis(216),
+        );
+        let [RecognizedTouchGesture::Scroll(scroll)] = recognized.as_slice() else {
+            panic!("expected scroll, got {recognized:?}");
+        };
+        assert_eq!(scroll.delta.pixel_delta(px(16.)), point(px(12.), px(0.)));
+
+        // Once decided, the axis stays locked for the rest of the pan.
+        let recognized = recognizer.handle_event_at(
+            &touch_event(TouchId(2), TouchPhase::Moved, 120., 230.),
+            now + Duration::from_millis(232),
+        );
+        let [RecognizedTouchGesture::Scroll(scroll)] = recognized.as_slice() else {
+            panic!("expected scroll, got {recognized:?}");
+        };
+        assert_eq!(scroll.delta.pixel_delta(px(16.)), point(px(8.), px(0.)));
     }
 
     #[test]

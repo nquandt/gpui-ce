@@ -227,8 +227,11 @@ struct CMTime {
 }
 
 unsafe impl Encode for CMTime {
+    // `CMTime` is a typedef of an anonymous struct, so its Objective-C type
+    // encoding is `{?=qiIq}`; naming it "CMTime" here makes objc2's debug
+    // encoding verification abort the process on every `currentTime` call.
     const ENCODING: Encoding = Encoding::Struct(
-        "CMTime",
+        "?",
         &[
             Encoding::LongLong,
             Encoding::Int,

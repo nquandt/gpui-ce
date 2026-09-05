@@ -130,15 +130,22 @@ impl PlatformTextSystem for IosTextSystem {
                 if let Some(font_ids) = lock.font_ids_by_font_key.get(&font_key) {
                     font_ids.clone()
                 } else {
-                    let font_ids =
-                        lock.load_family(&font.family, &font.features, font.fallbacks.as_ref())?;
+                    let font_ids = lock
+                        .load_family(&font.family, &font.features, font.fallbacks.as_ref())
+                        .map_err(|err| {
+                            log::warn!(
+                                "GPUI iOS: failed to load font family {:?}: {err:#}",
+                                font.family
+                            );
+                            err
+                        })?;
                     lock.font_ids_by_font_key.insert(font_key, font_ids.clone());
                     font_ids
                 };
 
             let candidate_properties: SmallVec<[font_kit::properties::Properties; 4]> = candidates
                 .iter()
-                .map(|font_id| lock.fonts[font_id.0].properties())
+                .map(|font_id| font_properties(&lock.fonts[font_id.0]))
                 .collect();
 
             let ix = font_kit::matching::find_best_match(
@@ -266,32 +273,46 @@ impl IosTextSystemState {
                 }
             }
 
-            // Validate font traits to avoid panics from malformed fonts
+            // Validate font traits to avoid panics from malformed fonts.
+            // Only the symbolic trait is required (it drives style/weight
+            // matching); the numeric traits are optional on iOS, where
+            // CoreText omits them for some system families.
             let traits = font.native_font().all_traits();
-            if unsafe {
-                !(traits
-                    .get(kCTFontSymbolicTrait)
-                    .downcast::<CFNumber>()
+            let trait_report = unsafe {
+                [
+                    ("symbolic", kCTFontSymbolicTrait),
+                    ("width", kCTFontWidthTrait),
+                    ("weight", kCTFontWeightTrait),
+                    ("slant", kCTFontSlantTrait),
+                ]
+                .iter()
+                .map(|(label, key)| {
+                    let present = traits
+                        .find(*key)
+                        .and_then(|value| value.downcast::<CFNumber>())
+                        .is_some();
+                    format!("{label}={present}")
+                })
+                .collect::<Vec<_>>()
+                .join(" ")
+            };
+            let has_symbolic = unsafe {
+                traits
+                    .find(kCTFontSymbolicTrait)
+                    .and_then(|value| value.downcast::<CFNumber>())
                     .is_some()
-                    && traits
-                        .get(kCTFontWidthTrait)
-                        .downcast::<CFNumber>()
-                        .is_some()
-                    && traits
-                        .get(kCTFontWeightTrait)
-                        .downcast::<CFNumber>()
-                        .is_some()
-                    && traits
-                        .get(kCTFontSlantTrait)
-                        .downcast::<CFNumber>()
-                        .is_some())
-            } {
+            };
+            if !has_symbolic {
                 log::error!(
-                    "Failed to read traits for font {:?}",
-                    font.postscript_name().unwrap()
+                    "Failed to read traits for font {:?} ({trait_report})",
+                    font.postscript_name().unwrap_or_default()
                 );
                 continue;
             }
+            log::debug!(
+                "GPUI iOS: loaded font {:?} ({trait_report})",
+                font.postscript_name().unwrap_or_default()
+            );
 
             let font_id = FontId(self.fonts.len());
             font_ids.push(font_id);
@@ -599,6 +620,47 @@ fn recti_to_bounds_device_pixels(rect: RectI) -> Bounds<DevicePixels> {
 
 fn vec2f_to_size_f32(vec: Vector2F) -> Size<f32> {
     size(vec.x(), vec.y())
+}
+
+/// Reads a font's matching properties without going through font-kit's
+/// `Font::properties()`, which unwraps `kCTFontWeightTrait`/`kCTFontWidthTrait`/
+/// `kCTFontSlantTrait` as `CFNumber`s and aborts on iOS, where CoreText does
+/// not report those numeric traits for many system families. The symbolic
+/// traits (bold/italic bits) are always available and are enough to pick a
+/// face within a family; the numeric weight is used when it is present.
+fn font_properties(font: &FontKitFont) -> font_kit::properties::Properties {
+    use core_text::font_descriptor::{kCTFontBoldTrait, kCTFontItalicTrait};
+
+    let native = font.native_font();
+    let symbolic = native.symbolic_traits();
+    let is_bold = symbolic & kCTFontBoldTrait != 0;
+    let is_italic = symbolic & kCTFontItalicTrait != 0;
+
+    let traits = native.all_traits();
+    let numeric_weight = unsafe {
+        traits
+            .find(kCTFontWeightTrait)
+            .and_then(|value| value.downcast::<CFNumber>())
+            .and_then(|number| number.to_f64())
+    };
+    // CoreText normalizes weight to -1.0..=1.0 with 0.0 = regular; map that
+    // back onto the CSS 100..=900 scale used by font-kit's matcher.
+    let weight = match numeric_weight {
+        Some(normalized) if normalized < 0.0 => 400.0 + normalized * 300.0,
+        Some(normalized) => 400.0 + normalized * 500.0,
+        None if is_bold => 700.0,
+        None => 400.0,
+    };
+
+    font_kit::properties::Properties {
+        style: if is_italic {
+            FontkitStyle::Italic
+        } else {
+            FontkitStyle::Normal
+        },
+        weight: FontkitWeight(weight.clamp(100.0, 900.0) as f32),
+        stretch: Default::default(),
+    }
 }
 
 fn font_weight_to_fontkit(value: FontWeight) -> FontkitWeight {

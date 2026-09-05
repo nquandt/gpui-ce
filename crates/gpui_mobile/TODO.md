@@ -106,6 +106,43 @@ What's implemented:
 - Android: `android/window.rs`'s `InputConnection`/`EditorInfo` equivalent
   of this work has not been investigated or started.
 
+## Device test round 1 (2026-09-04, iPhone 16 Pro / iOS 26.6, `examples/ios_gallery`)
+
+Fixed as a result of on-device testing (all in this branch):
+
+- Every write to `SharedPreferences` aborted (`-[NSUserDefaults synchronize]`
+  declared as returning void; it returns BOOL). The call was removed.
+- Leaving a text field aborted (`setInputDelegate:nil` retained nil).
+- iOS forwarded touches as synthesized mouse events with its own tap/scroll
+  state machine; it now sends raw `PlatformInput::Touch` events and GPUI
+  core's `TouchGestureRecognizer` handles tap, pan + momentum, long press and
+  touch drag. Long press works; multi-touch reaches GPUI (pinch recognition is
+  still unimplemented in core).
+- GPUI core: a touch landing during fling momentum inherited the fling's pan
+  axis, so a sideways drag right after a vertical scroll was locked vertical.
+- Changing the keyboard type while the keyboard is up needs `reloadInputViews`.
+- Clipboard image read used the Swift-only `pngData` selector; `NSData bytes`
+  was declared with the wrong pointer type.
+- `url_launcher` used the dead `-[UIApplication openURL:]`.
+- `set_window_appearance` is now implemented (`overrideUserInterfaceStyle`).
+- No logger was installed on iOS, so crate logs never reached the console
+  (`RUST_LOG=debug` now enables per-touch logging).
+
+Still open from that round:
+
+- GPUI core `Interactivity::paint_scroll_listener` maps a horizontal delta
+  onto a vertical-only scroller unless `restrict_scroll_to_axis` is set; on
+  touch that makes nested horizontal rows drag their parent. Apps must opt in
+  per scroller today; core should skip the cross-axis mapping for touch pans.
+- Dismissing the keyboard: tapping outside a field does not blur it. The
+  gallery shell adds a header button; a platform-level policy is undecided.
+- `TextInputConfiguration` (autocorrect / return-key) is not exposed by
+  `gpui_ce_elements::editable_text`, so the bridge's trait mapping cannot be
+  driven from app code yet.
+- Remote images / GIFs needed an `HttpClient`: `ios/http_client.rs` now installs an
+  `NSURLSession`-backed one by default (redirects always followed).
+- `media_session` has no iOS implementation; `maps` iOS calls are stubs.
+
 ## Other known gaps (lower priority, noted in code)
 
 - `packages/webview/ios.rs`: `evaluate_javascript`, `go_back`, `reload`,
