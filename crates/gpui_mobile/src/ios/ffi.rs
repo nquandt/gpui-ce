@@ -520,6 +520,10 @@ pub fn run_app() {
 
     let platform = Rc::new(super::IosPlatform::new());
     let handle = Application::with_platform(platform).run_embedded(|cx: &mut App| {
+        // GPUI starts with a `NullHttpClient`; give apps a working default so
+        // remote images and other `cx.http_client()` users function. The app
+        // callback may replace it.
+        cx.set_http_client(std::sync::Arc::new(super::IosHttpClient));
         if let Some(cb) = take_app_callback() {
             log::info!("GPUI iOS: Invoking user-provided app callback");
             cb(cx);

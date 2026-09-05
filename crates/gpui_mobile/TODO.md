@@ -139,7 +139,8 @@ Still open from that round:
 - `TextInputConfiguration` (autocorrect / return-key) is not exposed by
   `gpui_ce_elements::editable_text`, so the bridge's trait mapping cannot be
   driven from app code yet.
-- Remote images / GIFs require an `HttpClient`; see `ios/http_client.rs`.
+- Remote images / GIFs needed an `HttpClient`: `ios/http_client.rs` now installs an
+  `NSURLSession`-backed one by default (redirects always followed).
 - `media_session` has no iOS implementation; `maps` iOS calls are stubs.
 
 ## Other known gaps (lower priority, noted in code)
