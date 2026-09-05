@@ -697,7 +697,12 @@ pub(crate) fn register_text_input_view_class() -> &'static AnyClass {
                 if !old.is_null() {
                     let _: () = msg_send![old as *mut AnyObject, release];
                 }
-                let retained: *mut AnyObject = msg_send![delegate, retain];
+                // UIKit clears the delegate with nil on resignFirstResponder.
+                let retained: *mut AnyObject = if delegate.is_null() {
+                    std::ptr::null_mut()
+                } else {
+                    msg_send![delegate, retain]
+                };
                 #[allow(deprecated)]
                 {
                     *(*this).get_mut_ivar::<*mut c_void>("_inputDelegate") =
