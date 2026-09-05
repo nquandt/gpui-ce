@@ -108,7 +108,12 @@ fn bar_graph(label: &str, value: Option<f64>, max: f64) -> impl IntoElement {
         .flex()
         .flex_col()
         .gap_1()
-        .child(div().text_color(rgb(0xffffff)).text_size(px(12.0)).child(text))
+        .child(
+            div()
+                .text_color(rgb(0xffffff))
+                .text_size(px(12.0))
+                .child(text),
+        )
         .child(
             div()
                 .h(px(10.0))
@@ -130,7 +135,12 @@ fn axis_bars(label: &str, data: Option<sensors::SensorData>, max: f64) -> impl I
         .flex()
         .flex_col()
         .gap_1()
-        .child(div().text_color(rgb(0xd0d0d0)).text_size(px(13.0)).child(label.to_string()))
+        .child(
+            div()
+                .text_color(rgb(0xd0d0d0))
+                .text_size(px(13.0))
+                .child(label.to_string()),
+        )
         .child(bar_graph("x", data.map(|d| d.x), max))
         .child(bar_graph("y", data.map(|d| d.y), max))
         .child(bar_graph("z", data.map(|d| d.z), max))

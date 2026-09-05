@@ -100,7 +100,11 @@ impl Render for DeviceInfoScreen {
                     kv("device_name", d.device_name),
                     kv(
                         "is_physical_device",
-                        if d.is_physical_device { "yes" } else { "no (simulator)" },
+                        if d.is_physical_device {
+                            "yes"
+                        } else {
+                            "no (simulator)"
+                        },
                     ),
                 ],
                 Err(e) => vec![kv("error", e)],
@@ -120,7 +124,11 @@ impl Render for DeviceInfoScreen {
                     .child(kv("state", battery_state_label(self.battery.state)))
                     .child(kv(
                         "low_power_mode",
-                        if self.battery.is_battery_save_mode { "yes" } else { "no" },
+                        if self.battery.is_battery_save_mode {
+                            "yes"
+                        } else {
+                            "no"
+                        },
                     )),
             )
             .child(
@@ -135,7 +143,10 @@ impl Render for DeviceInfoScreen {
             .child(section("network_info").children(match network {
                 Ok(n) => vec![
                     kv("wifi_name", n.wifi_name.unwrap_or_else(|| "(none)".into())),
-                    kv("wifi_bssid", n.wifi_bssid.unwrap_or_else(|| "(none)".into())),
+                    kv(
+                        "wifi_bssid",
+                        n.wifi_bssid.unwrap_or_else(|| "(none)".into()),
+                    ),
                     kv("wifi_ip", n.wifi_ip.unwrap_or_else(|| "(none)".into())),
                 ],
                 Err(e) => vec![kv("error", e)],
