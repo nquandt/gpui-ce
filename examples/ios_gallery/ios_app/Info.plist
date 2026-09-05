@@ -31,6 +31,8 @@
 	<string>1</string>
 	<key>LSSupportsOpeningDocumentsInPlace</key>
 	<true/>
+	<key>NSBluetoothAlwaysUsageDescription</key>
+	<string>GPUI Gallery uses Bluetooth to test the permission_handler screen.</string>
 	<key>NSCalendarsUsageDescription</key>
 	<string>GPUI Gallery reads calendars to test the calendar integration.</string>
 	<key>NSCameraUsageDescription</key>
@@ -51,6 +53,10 @@
 	<string>GPUI Gallery saves photos to test the image picker.</string>
 	<key>NSPhotoLibraryUsageDescription</key>
 	<string>GPUI Gallery reads photos to test the image picker.</string>
+	<key>NSSpeechRecognitionUsageDescription</key>
+	<string>GPUI Gallery uses speech recognition to test the permission_handler screen.</string>
+	<key>NSUserTrackingUsageDescription</key>
+	<string>GPUI Gallery requests tracking authorization to test the App Tracking Transparency permission.</string>
 	<key>UIBackgroundModes</key>
 	<array>
 		<string>audio</string>

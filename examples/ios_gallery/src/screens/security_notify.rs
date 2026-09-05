@@ -189,17 +189,7 @@ impl Render for SecurityNotifyScreen {
             )
             .child(
                 section("permission_handler")
-                    .child(note(
-                        "Permission::AppTrackingTransparency is omitted below: \
-                         check_permission()/request_permission() for it crash the whole app on \
-                         iOS (`+[ATTrackingManager trackingAuthorizationStatus]` is declared to \
-                         return u32 but the runtime returns NSUInteger/u64 — an objc2 type-code \
-                         mismatch, panic=abort, uncatchable). See \
-                         crates/gpui_mobile/src/packages/permission_handler/ios.rs:190-191.",
-                    ))
-                    .children(ALL_PERMISSIONS.iter().filter(|p| {
-                        !matches!(p, Permission::AppTrackingTransparency)
-                    }).map(|&p| {
+                    .children(ALL_PERMISSIONS.iter().map(|&p| {
                         let status = permission_handler::check_permission(p);
                         row()
                             .justify_between()

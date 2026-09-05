@@ -32,6 +32,9 @@ targets:
         NSFaceIDUsageDescription: "GPUI Gallery uses Face ID to test local authentication."
         NSMotionUsageDescription: "GPUI Gallery uses motion sensors to test the sensors screen."
         NSLocalNetworkUsageDescription: "GPUI Gallery uses the local network to test networking features."
+        NSUserTrackingUsageDescription: "GPUI Gallery requests tracking authorization to test the App Tracking Transparency permission."
+        NSSpeechRecognitionUsageDescription: "GPUI Gallery uses speech recognition to test the permission_handler screen."
+        NSBluetoothAlwaysUsageDescription: "GPUI Gallery uses Bluetooth to test the permission_handler screen."
     settings:
       base:
         PRODUCT_BUNDLE_IDENTIFIER: com.gpuice.iosgallery
@@ -94,6 +97,12 @@ targets:
           - "StoreKit"
           - "-framework"
           - "MediaPlayer"
+          - "-framework"
+          - "AppTrackingTransparency"
+          - "-framework"
+          - "CoreBluetooth"
+          - "-framework"
+          - "Speech"
           - "-lc++"
         ENABLE_BITCODE: NO
     scheme: {}
