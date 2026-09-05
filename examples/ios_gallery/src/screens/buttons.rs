@@ -132,6 +132,7 @@ impl Render for ButtonsScreen {
         div()
             .id("buttons-scroll")
             .overflow_y_scroll()
+            .restrict_scroll_to_axis()
             .size_full()
             .flex()
             .flex_col()
@@ -322,6 +323,7 @@ impl Render for ButtonsScreen {
                             .id("mouse-event-log")
                             .h(px(96.0))
                             .overflow_y_scroll()
+                            .restrict_scroll_to_axis()
                             .child(super::common::mono(if mouse_log.is_empty() {
                                 "(no events yet)".to_string()
                             } else {

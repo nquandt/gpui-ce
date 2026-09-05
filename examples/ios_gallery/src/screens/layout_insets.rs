@@ -68,6 +68,7 @@ impl Render for LayoutInsetsScreen {
         div()
             .id("layout_insets-scroll")
             .overflow_y_scroll()
+            .restrict_scroll_to_axis()
             .size_full()
             .flex()
             .flex_col()

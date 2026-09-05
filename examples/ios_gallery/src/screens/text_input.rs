@@ -69,6 +69,7 @@ impl Render for TextInputScreen {
         div()
             .id("text-input-scroll")
             .overflow_y_scroll()
+            .restrict_scroll_to_axis()
             .size_full()
             .flex()
             .flex_col()

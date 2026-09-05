@@ -144,6 +144,7 @@ impl Render for CameraScreen {
         div()
             .id("camera-scroll")
             .overflow_y_scroll()
+            .restrict_scroll_to_axis()
             .size_full()
             .flex()
             .flex_col()

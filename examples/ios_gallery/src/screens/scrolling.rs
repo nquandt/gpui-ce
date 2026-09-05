@@ -44,6 +44,7 @@ impl Render for ScrollingScreen {
         div()
             .id("scrolling-scroll")
             .overflow_y_scroll()
+            .restrict_scroll_to_axis()
             .on_scroll_wheel(|event, _window, _cx| {
                 log::info!(
                     "gallery scrolling: outer scroller got delta {:?} phase {:?}",

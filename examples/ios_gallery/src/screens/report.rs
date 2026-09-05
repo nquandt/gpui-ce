@@ -113,6 +113,7 @@ impl Render for ReportScreen {
             .p_4()
             .size_full()
             .overflow_y_scroll()
+            .restrict_scroll_to_axis()
             .child(
                 div()
                     .text_color(rgb(0xffffff))
@@ -155,6 +156,7 @@ impl Render for ReportScreen {
                         .id("report_event_log")
                         .h(px(220.0))
                         .overflow_y_scroll()
+                        .restrict_scroll_to_axis()
                         .child(mono(event_text)),
                 ),
             )

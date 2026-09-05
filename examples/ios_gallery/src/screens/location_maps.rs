@@ -125,6 +125,7 @@ impl Render for LocationMapsScreen {
         div()
             .id("location_maps-scroll")
             .overflow_y_scroll()
+            .restrict_scroll_to_axis()
             .size_full()
             .flex()
             .flex_col()

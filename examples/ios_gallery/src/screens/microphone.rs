@@ -202,6 +202,7 @@ impl Render for MicrophoneScreen {
         div()
             .id("microphone-scroll")
             .overflow_y_scroll()
+            .restrict_scroll_to_axis()
             .size_full()
             .flex()
             .flex_col()

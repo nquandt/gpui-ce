@@ -206,7 +206,8 @@ impl Gallery {
             .flex()
             .flex_col()
             .size_full()
-            .overflow_y_scroll();
+            .overflow_y_scroll()
+            .restrict_scroll_to_axis();
         let mut last_category: Option<&'static str> = None;
 
         for descriptor in self.descriptors.clone() {

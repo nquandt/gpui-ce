@@ -83,6 +83,7 @@ impl Render for PerformanceScreen {
             .flex_col()
             .h(px(200.0))
             .overflow_y_scroll()
+            .restrict_scroll_to_axis()
             .border_1()
             .border_color(rgb(0x444444));
         for i in 0..300 {
@@ -101,6 +102,7 @@ impl Render for PerformanceScreen {
         div()
             .id("performance-scroll")
             .overflow_y_scroll()
+            .restrict_scroll_to_axis()
             .size_full()
             .flex()
             .flex_col()

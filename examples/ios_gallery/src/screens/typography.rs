@@ -27,6 +27,7 @@ impl Render for TypographyScreen {
         div()
             .id("typography-scroll")
             .overflow_y_scroll()
+            .restrict_scroll_to_axis()
             .size_full()
             .flex()
             .flex_col()

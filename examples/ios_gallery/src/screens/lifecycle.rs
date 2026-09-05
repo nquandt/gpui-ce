@@ -79,6 +79,7 @@ impl Render for LifecycleScreen {
         div()
             .id("lifecycle-scroll")
             .overflow_y_scroll()
+            .restrict_scroll_to_axis()
             .size_full()
             .flex()
             .flex_col()
@@ -123,6 +124,7 @@ impl Render for LifecycleScreen {
                         .id("lifecycle_log")
                         .h(px(240.0))
                         .overflow_y_scroll()
+                        .restrict_scroll_to_axis()
                         .child(mono(log_text)),
                 ),
             )

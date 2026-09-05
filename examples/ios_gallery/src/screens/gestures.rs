@@ -152,6 +152,7 @@ impl Render for GesturesScreen {
         div()
             .id("gestures-scroll")
             .overflow_y_scroll()
+            .restrict_scroll_to_axis()
             .size_full()
             .flex()
             .flex_col()
@@ -363,6 +364,7 @@ impl Render for GesturesScreen {
                             .id("gesture-event-log")
                             .h(px(160.0))
                             .overflow_y_scroll()
+                            .restrict_scroll_to_axis()
                             .on_scroll_wheel(cx.listener(
                                 |this, event: &ScrollWheelEvent, _window, cx| {
                                     this.push_log(format!(
