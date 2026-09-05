@@ -558,7 +558,7 @@ struct StderrLogger;
 
 impl log::Log for StderrLogger {
     fn enabled(&self, metadata: &log::Metadata) -> bool {
-        metadata.level() <= log::Level::Info
+        metadata.level() <= log::max_level()
     }
 
     fn log(&self, record: &log::Record) {
@@ -584,6 +584,15 @@ impl log::Log for StderrLogger {
 fn install_default_logger() {
     static LOGGER: StderrLogger = StderrLogger;
     if log::set_logger(&LOGGER).is_ok() {
-        log::set_max_level(log::LevelFilter::Info);
+        // `RUST_LOG=debug` (e.g. via `devicectl ... --environment-variables`)
+        // raises the level; the default keeps per-touch chatter out.
+        let level = match std::env::var("RUST_LOG").as_deref() {
+            Ok("trace") => log::LevelFilter::Trace,
+            Ok("debug") => log::LevelFilter::Debug,
+            Ok("warn") => log::LevelFilter::Warn,
+            Ok("error") => log::LevelFilter::Error,
+            _ => log::LevelFilter::Info,
+        };
+        log::set_max_level(level);
     }
 }

@@ -44,6 +44,13 @@ impl Render for ScrollingScreen {
         div()
             .id("scrolling-scroll")
             .overflow_y_scroll()
+            .on_scroll_wheel(|event, _window, _cx| {
+                log::info!(
+                    "gallery scrolling: outer scroller got delta {:?} phase {:?}",
+                    event.delta,
+                    event.touch_phase
+                );
+            })
             .size_full()
             .flex()
             .flex_col()
@@ -90,6 +97,13 @@ impl Render for ScrollingScreen {
                 section("Nested horizontal row (50 cards)").child(
                     div()
                         .id("card-row-scroll")
+                        .on_scroll_wheel(|event, _window, _cx| {
+                            log::info!(
+                                "gallery scrolling: card row got delta {:?} phase {:?}",
+                                event.delta,
+                                event.touch_phase
+                            );
+                        })
                         .flex()
                         .flex_row()
                         .gap_2()

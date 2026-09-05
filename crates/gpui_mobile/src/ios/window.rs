@@ -915,6 +915,11 @@ impl IosWindow {
             }
         };
 
+        log::debug!(
+            "GPUI iOS: touch {id} {phase:?} at ({:.1}, {:.1}) force={force:?}",
+            f32::from(position.x),
+            f32::from(position.y)
+        );
         let event = PlatformInput::Touch(TouchEvent {
             id: TouchId(id),
             phase,
@@ -1013,6 +1018,13 @@ impl IosWindow {
                 0
             };
             let _: () = msg_send![self.text_input_view, setReturnKeyType: return_key_type];
+            // If the keyboard is already up, UIKit only re-reads the traits
+            // after reloadInputViews; without it the keyboard type never
+            // changes for a focused field.
+            let is_first_responder: bool = msg_send![self.text_input_view, isFirstResponder];
+            if is_first_responder {
+                let _: () = msg_send![self.text_input_view, reloadInputViews];
+            }
             log::info!("GPUI iOS: scheduling becomeFirstResponder");
 
             // Defer becomeFirstResponder to the next run-loop iteration.

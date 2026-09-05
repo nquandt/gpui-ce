@@ -1,15 +1,15 @@
 //! "Buttons & taps" screen: tap counter, double tap, long press, disabled
-//! button, mouse down/up/move ticker, haptics, and `window.prompt`.
+//! button, mouse down/up ticker, haptics, and `window.prompt`.
 
 use super::ScreenDescriptor;
 use super::common::{button, kv, label, note, row, section};
 use crate::log as gallery_log;
 use gpui::{
-    AnyView, App, ClickEvent, Context, HapticFeedbackStyle, MouseButton, MouseDownEvent,
-    MouseMoveEvent, MouseUpEvent, PromptLevel, Window, div, prelude::*, px, rgb,
+    AnyView, App, Bounds, ClickEvent, Context, DispatchPhase, Entity, HapticFeedbackStyle,
+    LongPressEvent, MouseButton, MouseDownEvent, MouseUpEvent, Pixels, PromptLevel, TouchPhase,
+    Window, canvas, div, prelude::*, px, rgb,
 };
 use std::collections::VecDeque;
-use std::time::Duration;
 
 pub fn descriptor() -> ScreenDescriptor {
     ScreenDescriptor {
@@ -26,8 +26,8 @@ fn build(_window: &mut Window, cx: &mut App) -> AnyView {
         taps: 0,
         double_taps: 0,
         last_click_count: 0,
+        last_click_kind: "none yet".into(),
         disabled_taps: 0,
-        long_press_generation: 0,
         long_press_status: "idle".into(),
         mouse_events: VecDeque::new(),
         haptic_status: String::new(),
@@ -42,11 +42,8 @@ struct ButtonsScreen {
     taps: u64,
     double_taps: u64,
     last_click_count: usize,
+    last_click_kind: String,
     disabled_taps: u64,
-    /// Incremented on every mouse-down; a spawned 500ms timer only fires a
-    /// long-press if the generation it captured is still current (i.e. the
-    /// finger hasn't lifted or a new press hasn't started) when it wakes.
-    long_press_generation: u64,
     long_press_status: String,
     mouse_events: VecDeque<String>,
     haptic_status: String,
@@ -60,32 +57,65 @@ impl ButtonsScreen {
         }
         self.mouse_events.push_back(text);
     }
+}
 
-    fn start_long_press_timer(&mut self, cx: &mut Context<Self>) {
-        self.long_press_generation = self.long_press_generation.wrapping_add(1);
-        let generation = self.long_press_generation;
-        self.long_press_status = "pressed — hold for 500ms…".into();
-        cx.spawn(async move |this, cx| {
-            cx.background_executor()
-                .timer(Duration::from_millis(500))
-                .await;
-            let Some(this) = this.upgrade() else { return };
-            this.update(cx, |this, cx| {
-                if this.long_press_generation == generation {
-                    this.long_press_status = "long-press recognized!".into();
-                    gallery_log::push("buttons: long-press recognized");
-                    cx.notify();
-                }
-            });
-        })
-        .detach();
-    }
-
-    fn cancel_long_press_timer(&mut self, reason: &str) {
-        // Bump the generation so the pending timer callback becomes a no-op.
-        self.long_press_generation = self.long_press_generation.wrapping_add(1);
-        self.long_press_status = reason.to_string();
-    }
+/// Wraps `content` in an absolutely-positioned area whose bounds are used to
+/// scope a [`LongPressEvent`] listener registered directly on the window via
+/// [`Window::on_mouse_event`] (see `crates/gpui/src/window.rs:5120`).
+///
+/// `div`/`Interactivity` has no fluent `on_long_press` helper yet (checked
+/// `crates/gpui/src/elements/div.rs` and `crates/gpui/src/interactive.rs`:
+/// only `on_mouse_down`/`on_mouse_up`/`on_mouse_move`/`on_scroll_wheel`/
+/// `on_drag`/`on_click`/`on_pinch` exist), so this screen registers the
+/// listener itself using the low-level `canvas` element
+/// (`crates/gpui/src/elements/canvas.rs`), whose `paint` callback runs during
+/// the paint phase, which is required by `on_mouse_event`
+/// (`Window::debug_assert_paint`, `crates/gpui/src/window.rs:280`).
+///
+/// The `Started` phase must be claimed with `window.capture_long_press` +
+/// `window.prevent_default()` or the recognizer treats it as unclaimed and
+/// will not deliver `Moved`/`Ended` (`crates/gpui/src/window.rs:5539-5590`
+/// `dispatch_recognized_touch_gesture`, and `capture_long_press`/
+/// `has_long_press_capture` around `crates/gpui/src/window.rs:2867`).
+fn long_press_area<E: IntoElement>(
+    content: E,
+    entity: Entity<ButtonsScreen>,
+    on_event: impl Fn(&LongPressEvent, &mut Window, &mut App) + 'static,
+) -> impl IntoElement {
+    div()
+        .relative()
+        .child(content)
+        .child(div().absolute().inset_0().child(canvas(
+            |_bounds, _window, _cx| {},
+            move |bounds: Bounds<Pixels>, _state, window, _cx| {
+                let entity = entity.clone();
+                window.on_mouse_event(
+                    move |event: &LongPressEvent, phase, window: &mut Window, cx: &mut App| {
+                        if phase != DispatchPhase::Bubble {
+                            return;
+                        }
+                        let hit_position = if event.phase == TouchPhase::Started {
+                            event.start_position
+                        } else {
+                            event.position
+                        };
+                        if event.phase == TouchPhase::Started {
+                            if !bounds.contains(&hit_position) {
+                                return;
+                            }
+                            // Claim the gesture so the recognizer keeps sending
+                            // Moved/Ended/Cancelled to us instead of treating it
+                            // as unclaimed.
+                            window.capture_long_press(&entity);
+                            window.prevent_default();
+                        } else if !window.has_long_press_capture(&entity) {
+                            return;
+                        }
+                        on_event(event, window, cx);
+                    },
+                );
+            },
+        )))
 }
 
 impl Render for ButtonsScreen {
@@ -97,6 +127,7 @@ impl Render for ButtonsScreen {
             .cloned()
             .collect::<Vec<_>>()
             .join("\n");
+        let entity = cx.entity();
 
         div()
             .id("buttons-scroll")
@@ -135,7 +166,10 @@ impl Render for ButtonsScreen {
                     .child(note(
                         "Tap the box twice quickly — `click_count` should read 2 and \
                          'double taps' should increment. A single tap should not \
-                         increment 'double taps'.",
+                         increment 'double taps'. On a touch device the tap arrives \
+                         as `ClickEvent::Touch` (no modifiers, no first-click info); \
+                         on a mouse/trackpad it arrives as `ClickEvent::Mouse`. The \
+                         variant that fired is shown below.",
                     ))
                     .child(
                         div()
@@ -151,30 +185,41 @@ impl Render for ButtonsScreen {
                             .on_click(cx.listener(|this, event: &ClickEvent, _window, cx| {
                                 let count = event.click_count();
                                 this.last_click_count = count;
+                                this.last_click_kind = match event {
+                                    ClickEvent::Mouse(_) => "Mouse".to_string(),
+                                    ClickEvent::Touch(_) => "Touch".to_string(),
+                                    ClickEvent::Keyboard(_) => "Keyboard".to_string(),
+                                };
                                 if count >= 2 {
                                     this.double_taps += 1;
                                 }
                                 gallery_log::push(format!(
-                                    "buttons: click_count={count}, double_taps={}",
-                                    this.double_taps
+                                    "buttons: click_count={count}, kind={}, double_taps={}",
+                                    this.last_click_kind, this.double_taps
                                 ));
                                 cx.notify();
                             }))
                             .child("Tap x2"),
                     )
                     .child(kv("last click_count", self.last_click_count.to_string()))
+                    .child(kv("last click kind", self.last_click_kind.clone()))
                     .child(kv("double taps", self.double_taps.to_string())),
             )
             .child(
                 section("Long press")
                     .child(note(
-                        "Press and hold for 500ms without lifting — status should read \
-                         'long-press recognized!'. Lifting early should read 'released \
-                         early'. Implemented with a timer since div has no fluent \
-                         on_long_press yet (see gpui/src/gestures.rs: LongPressEvent is \
-                         recognized internally but not wired to a div listener).",
+                        "Press and hold without lifting — status should read \
+                         'long-press recognized!' once GPUI's gesture recognizer \
+                         fires `LongPressEvent::Started` (see \
+                         `crates/gpui/src/gestures.rs:406`). Moving your finger while \
+                         still holding shows 'moved'; lifting or having the touch \
+                         cancelled (e.g. by the OS) shows 'released'/'cancelled'. \
+                         Unlike the previous timer-based implementation, this is \
+                         driven entirely by the core recognizer once the gesture is \
+                         claimed via `Window::capture_long_press` + \
+                         `Window::prevent_default()` on the Started phase.",
                     ))
-                    .child(
+                    .child(long_press_area(
                         div()
                             .id("long-press-target")
                             .flex()
@@ -185,24 +230,25 @@ impl Render for ButtonsScreen {
                             .bg(rgb(0x2c2c34))
                             .rounded_md()
                             .text_color(rgb(0xffffff))
-                            .on_mouse_down(
-                                MouseButton::Left,
-                                cx.listener(|this, _: &MouseDownEvent, _window, cx| {
-                                    this.start_long_press_timer(cx);
-                                    cx.notify();
-                                }),
-                            )
-                            .on_mouse_up(
-                                MouseButton::Left,
-                                cx.listener(|this, _: &MouseUpEvent, _window, cx| {
-                                    if this.long_press_status != "long-press recognized!" {
-                                        this.cancel_long_press_timer("released early");
-                                    }
-                                    cx.notify();
-                                }),
-                            )
                             .child("Hold me"),
-                    )
+                        entity.clone(),
+                        cx.listener(|this, event: &LongPressEvent, _window, cx| {
+                            this.long_press_status = match event.phase {
+                                TouchPhase::Started => "long-press recognized!".to_string(),
+                                TouchPhase::Moved => format!(
+                                    "moved @ ({:.0}, {:.0})",
+                                    f32::from(event.position.x),
+                                    f32::from(event.position.y)
+                                ),
+                                TouchPhase::Ended => "released".to_string(),
+                                TouchPhase::Cancelled => "cancelled".to_string(),
+                            };
+                            if event.phase == TouchPhase::Started {
+                                gallery_log::push("buttons: long-press recognized");
+                            }
+                            cx.notify();
+                        }),
+                    ))
                     .child(kv("status", self.long_press_status.clone())),
             )
             .child(
@@ -229,10 +275,17 @@ impl Render for ButtonsScreen {
                     .child(kv("disabled taps", self.disabled_taps.to_string())),
             )
             .child(
-                section("Mouse down / up / move ticker")
+                section("Mouse down / up ticker")
                     .child(note(
-                        "Touch and drag inside the box below — the log should show the \
-                         last 5 down/up/move events with positions, most recent first.",
+                        "Tap inside the box below. On a touch device GPUI does NOT \
+                         synthesize a `MouseMoveEvent` during a pan/drag, and a tap's \
+                         `MouseDown` is only delivered together with `MouseUp` at the \
+                         moment the finger lifts (see \
+                         `dispatch_recognized_touch_gesture`'s `Tap { down, up }` arm, \
+                         `crates/gpui/src/window.rs:5539-5590`) — so on-device you \
+                         should see 'down' and 'up' appear together, back to back, \
+                         never a 'down' on its own while your finger is still \
+                         resting. On a mouse/trackpad they still arrive separately.",
                     ))
                     .child(
                         div()
@@ -262,17 +315,7 @@ impl Render for ButtonsScreen {
                                     ));
                                     cx.notify();
                                 }),
-                            )
-                            .on_mouse_move(cx.listener(
-                                |this, event: &MouseMoveEvent, _window, cx| {
-                                    this.push_mouse_event(format!(
-                                        "move  @ ({:.0}, {:.0})",
-                                        f32::from(event.position.x),
-                                        f32::from(event.position.y)
-                                    ));
-                                    cx.notify();
-                                },
-                            )),
+                            ),
                     )
                     .child(
                         div()
