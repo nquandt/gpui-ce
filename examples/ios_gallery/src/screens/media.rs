@@ -1,26 +1,370 @@
-//! Placeholder screen for "Video & audio". See `screens/mod.rs`'s
-//! `ScreenDescriptor` contract — this file will be filled in by another
-//! agent; keep the exported `descriptor()` signature stable.
+//! "Media": video_player platform view, a synthesized + a remote audio
+//! player through the `audio` package, and media_session probing.
 
 use super::ScreenDescriptor;
-use super::common::PlaceholderScreen;
-use gpui::{AnyView, App, Window, prelude::*};
+use super::common::{button, kv, note, row, section};
+use crate::log as gallery_log;
+use gpui::{AnyView, App, Context, Window, div, prelude::*, px, rgb};
+use gpui_mobile::components::platform_view_element::platform_view_element;
+use gpui_mobile::packages::audio::AudioPlayer;
+use gpui_mobile::packages::video_player::VideoPlayer;
+use gpui_mobile::packages::{media_session, path_provider};
+use std::f32::consts::PI;
+use std::time::Duration;
+
+const VIDEO_URL: &str =
+    "https://commondatastorage.googleapis.com/gtv-videos-bucket/sample/BigBuckBunny.mp4";
+const REMOTE_MP3_URL: &str = "https://www2.cs.uic.edu/~i101/SoundFiles/StarWars3.wav";
 
 pub fn descriptor() -> ScreenDescriptor {
     ScreenDescriptor {
         id: "media",
-        title: "Video & audio",
+        title: "Media",
         category: "Hardware & media",
-        blurb: "AVPlayer video, audio player, media session",
+        blurb: "video_player, audio, media_session",
         build,
     }
 }
 
 fn build(_window: &mut Window, cx: &mut App) -> AnyView {
-    cx.new(|_cx| PlaceholderScreen {
-        id: "media",
-        title: "Video & audio",
-        blurb: "AVPlayer video, audio player, media session",
+    cx.new(|cx| {
+        let mut this = MediaScreen {
+            video: None,
+            video_status: String::new(),
+            tone_audio: None,
+            tone_status: String::new(),
+            remote_audio: None,
+            remote_status: String::new(),
+            session_log: Vec::new(),
+        };
+        this.init_video();
+        let weak = cx.entity().downgrade();
+        cx.spawn(async move |_this, cx| {
+            loop {
+                cx.background_executor()
+                    .timer(Duration::from_millis(500))
+                    .await;
+                if weak
+                    .update(cx, |_this: &mut MediaScreen, cx| cx.notify())
+                    .is_err()
+                {
+                    break;
+                }
+            }
+        })
+        .detach();
+        this
     })
     .into()
+}
+
+struct MediaScreen {
+    video: Option<VideoPlayer>,
+    video_status: String,
+    tone_audio: Option<AudioPlayer>,
+    tone_status: String,
+    remote_audio: Option<AudioPlayer>,
+    remote_status: String,
+    session_log: Vec<String>,
+}
+
+/// Write a minimal 44-byte canonical PCM WAV header followed by a 440Hz
+/// sine tone, 3 seconds, mono, 16-bit, 44100Hz.
+fn synth_tone_wav() -> Vec<u8> {
+    let sample_rate: u32 = 44100;
+    let seconds: u32 = 3;
+    let num_samples = sample_rate * seconds;
+    let data_size = num_samples * 2; // 16-bit mono
+    let mut buf = Vec::with_capacity(44 + data_size as usize);
+
+    buf.extend_from_slice(b"RIFF");
+    buf.extend_from_slice(&(36 + data_size).to_le_bytes());
+    buf.extend_from_slice(b"WAVE");
+    buf.extend_from_slice(b"fmt ");
+    buf.extend_from_slice(&16u32.to_le_bytes()); // fmt chunk size
+    buf.extend_from_slice(&1u16.to_le_bytes()); // PCM
+    buf.extend_from_slice(&1u16.to_le_bytes()); // mono
+    buf.extend_from_slice(&sample_rate.to_le_bytes());
+    let byte_rate = sample_rate * 2;
+    buf.extend_from_slice(&byte_rate.to_le_bytes());
+    buf.extend_from_slice(&2u16.to_le_bytes()); // block align
+    buf.extend_from_slice(&16u16.to_le_bytes()); // bits per sample
+    buf.extend_from_slice(b"data");
+    buf.extend_from_slice(&data_size.to_le_bytes());
+
+    for i in 0..num_samples {
+        let t = i as f32 / sample_rate as f32;
+        let sample = (t * 440.0 * 2.0 * PI).sin() * i16::MAX as f32 * 0.5;
+        buf.extend_from_slice(&(sample as i16).to_le_bytes());
+    }
+    buf
+}
+
+impl MediaScreen {
+    fn init_video(&mut self) {
+        match VideoPlayer::new() {
+            Ok(player) => {
+                match player.set_url(VIDEO_URL) {
+                    Ok(info) => {
+                        self.video_status = format!(
+                            "loaded: {}x{}, {}ms",
+                            info.width, info.height, info.duration_ms
+                        );
+                    }
+                    Err(e) => self.video_status = format!("set_url error: {e}"),
+                }
+                self.video = Some(player);
+                gallery_log::push("media: video player created");
+            }
+            Err(e) => self.video_status = format!("VideoPlayer::new error: {e}"),
+        }
+    }
+
+    fn ensure_surface(&mut self) {
+        if let Some(video) = self.video.as_mut()
+            && let Err(e) = video.show_surface(0.0, 0.0, 300.0, 168.75)
+        {
+            self.video_status = format!("show_surface error: {e}");
+        }
+    }
+}
+
+impl Render for MediaScreen {
+    fn render(&mut self, _window: &mut Window, cx: &mut Context<Self>) -> impl IntoElement {
+        self.ensure_surface();
+
+        let (position_ms, duration_ms, playing) = if let Some(v) = self.video.as_ref() {
+            (
+                v.position().unwrap_or(0),
+                v.duration().unwrap_or(0),
+                v.is_playing().unwrap_or(false),
+            )
+        } else {
+            (0, 0, false)
+        };
+
+        let (tone_state, tone_pos, tone_dur) = if let Some(a) = self.tone_audio.as_ref() {
+            (
+                format!(
+                    "{:?}",
+                    a.state()
+                        .unwrap_or(gpui_mobile::packages::audio::PlayerState::Idle)
+                ),
+                a.position().unwrap_or(0),
+                a.duration().unwrap_or(0),
+            )
+        } else {
+            ("(not created)".into(), 0, 0)
+        };
+
+        let (remote_state, remote_pos, remote_dur) = if let Some(a) = self.remote_audio.as_ref() {
+            (
+                format!(
+                    "{:?}",
+                    a.state()
+                        .unwrap_or(gpui_mobile::packages::audio::PlayerState::Idle)
+                ),
+                a.position().unwrap_or(0),
+                a.duration().unwrap_or(0),
+            )
+        } else {
+            ("(not created)".into(), 0, 0)
+        };
+
+        div()
+            .id("media-scroll")
+            .overflow_y_scroll()
+            .size_full()
+            .flex()
+            .flex_col()
+            .gap_3()
+            .p_4()
+            .child(div().text_color(rgb(0xffffff)).text_size(px(20.0)).child("Media"))
+            .child(note("Video and audio playback via native platform APIs. Readouts refresh every 500ms."))
+            .child(
+                section("video_player")
+                    .child(note(VIDEO_URL))
+                    .child(
+                        div()
+                            .w(px(300.0))
+                            .h(px(168.75)) // 300 / (16/9)
+                            .bg(rgb(0x111111))
+                            .child(
+                                self.video
+                                    .as_ref()
+                                    .and_then(|v| v.platform_view_handle())
+                                    .map(platform_view_element)
+                                    .unwrap_or_else(|| div().size_full()),
+                            ),
+                    )
+                    .child(kv("position / duration", format!("{position_ms}ms / {duration_ms}ms")))
+                    .child(kv("playing", playing.to_string()))
+                    .child(row()
+                        .child(button("Play", cx.listener(|this, _, _window, cx| {
+                            if let Some(v) = this.video.as_ref()
+                                && let Err(e) = v.play() { this.video_status = format!("play error: {e}"); }
+                            cx.notify();
+                        })))
+                        .child(button("Pause", cx.listener(|this, _, _window, cx| {
+                            if let Some(v) = this.video.as_ref()
+                                && let Err(e) = v.pause() { this.video_status = format!("pause error: {e}"); }
+                            cx.notify();
+                        })))
+                        .child(button("-10s", cx.listener(|this, _, _window, cx| {
+                            if let Some(v) = this.video.as_ref() {
+                                let pos = v.position().unwrap_or(0);
+                                let new_pos = pos.saturating_sub(10_000);
+                                if let Err(e) = v.seek(new_pos) { this.video_status = format!("seek error: {e}"); }
+                            }
+                            cx.notify();
+                        })))
+                        .child(button("+10s", cx.listener(|this, _, _window, cx| {
+                            if let Some(v) = this.video.as_ref() {
+                                let pos = v.position().unwrap_or(0);
+                                if let Err(e) = v.seek(pos + 10_000) { this.video_status = format!("seek error: {e}"); }
+                            }
+                            cx.notify();
+                        }))))
+                    .child(row()
+                        .child(button("Vol 0.5", cx.listener(|this, _, _window, cx| {
+                            if let Some(v) = this.video.as_ref() { let _ = v.set_volume(0.5); }
+                            cx.notify();
+                        })))
+                        .child(button("Vol 1.0", cx.listener(|this, _, _window, cx| {
+                            if let Some(v) = this.video.as_ref() { let _ = v.set_volume(1.0); }
+                            cx.notify();
+                        })))
+                        .child(button("Speed 0.5x", cx.listener(|this, _, _window, cx| {
+                            if let Some(v) = this.video.as_ref() { let _ = v.set_speed(0.5); }
+                            cx.notify();
+                        })))
+                        .child(button("Speed 1x", cx.listener(|this, _, _window, cx| {
+                            if let Some(v) = this.video.as_ref() { let _ = v.set_speed(1.0); }
+                            cx.notify();
+                        })))
+                        .child(button("Speed 2x", cx.listener(|this, _, _window, cx| {
+                            if let Some(v) = this.video.as_ref() { let _ = v.set_speed(2.0); }
+                            cx.notify();
+                        })))
+                        .child(button("Loop on", cx.listener(|this, _, _window, cx| {
+                            if let Some(v) = this.video.as_ref() { let _ = v.set_looping(true); }
+                            cx.notify();
+                        })))
+                        .child(button("Loop off", cx.listener(|this, _, _window, cx| {
+                            if let Some(v) = this.video.as_ref() { let _ = v.set_looping(false); }
+                            cx.notify();
+                        }))))
+                    .child(note(self.video_status.clone())),
+            )
+            .child(
+                section("audio: synthesized tone")
+                    .child(note("A 440Hz sine, 3s, hand-rolled 44-byte WAV header, written to path_provider::temporary_directory()."))
+                    .child(button("Create + play tone", cx.listener(|this, _, _window, cx| {
+                        match path_provider::temporary_directory() {
+                            Ok(dir) => {
+                                let path = dir.join("gallery-tone.wav");
+                                let wav = synth_tone_wav();
+                                match std::fs::write(&path, &wav) {
+                                    Ok(()) => match AudioPlayer::new() {
+                                        Ok(player) => {
+                                            match player.set_file_path(&path.to_string_lossy()) {
+                                                Ok(_) => {
+                                                    let _ = player.play();
+                                                    this.tone_status = format!("playing {}", path.display());
+                                                    gallery_log::push("media: tone audio playing");
+                                                }
+                                                Err(e) => this.tone_status = format!("set_file_path error: {e}"),
+                                            }
+                                            this.tone_audio = Some(player);
+                                        }
+                                        Err(e) => this.tone_status = format!("AudioPlayer::new error: {e}"),
+                                    },
+                                    Err(e) => this.tone_status = format!("write error: {e}"),
+                                }
+                            }
+                            Err(e) => this.tone_status = format!("temporary_directory error: {e}"),
+                        }
+                        cx.notify();
+                    })))
+                    .child(row()
+                        .child(button("Pause tone", cx.listener(|this, _, _window, cx| {
+                            if let Some(a) = this.tone_audio.as_ref() { let _ = a.pause(); }
+                            cx.notify();
+                        })))
+                        .child(button("Resume tone", cx.listener(|this, _, _window, cx| {
+                            if let Some(a) = this.tone_audio.as_ref() { let _ = a.play(); }
+                            cx.notify();
+                        })))
+                        .child(button("Stop tone", cx.listener(|this, _, _window, cx| {
+                            if let Some(a) = this.tone_audio.as_ref() { let _ = a.stop(); }
+                            cx.notify();
+                        }))))
+                    .child(kv("state", tone_state))
+                    .child(kv("position / duration", format!("{tone_pos}ms / {tone_dur}ms")))
+                    .child(note(self.tone_status.clone())),
+            )
+            .child(
+                section("audio: remote file")
+                    .child(note(REMOTE_MP3_URL))
+                    .child(button("Create + play remote", cx.listener(|this, _, _window, cx| {
+                        match AudioPlayer::new() {
+                            Ok(player) => {
+                                match player.set_url(REMOTE_MP3_URL) {
+                                    Ok(_) => {
+                                        let _ = player.play();
+                                        this.remote_status = "playing remote file".into();
+                                        gallery_log::push("media: remote audio playing");
+                                    }
+                                    Err(e) => this.remote_status = format!("set_url error: {e}"),
+                                }
+                                this.remote_audio = Some(player);
+                            }
+                            Err(e) => this.remote_status = format!("AudioPlayer::new error: {e}"),
+                        }
+                        cx.notify();
+                    })))
+                    .child(row()
+                        .child(button("Pause remote", cx.listener(|this, _, _window, cx| {
+                            if let Some(a) = this.remote_audio.as_ref() { let _ = a.pause(); }
+                            cx.notify();
+                        })))
+                        .child(button("Resume remote", cx.listener(|this, _, _window, cx| {
+                            if let Some(a) = this.remote_audio.as_ref() { let _ = a.play(); }
+                            cx.notify();
+                        })))
+                        .child(button("Stop remote", cx.listener(|this, _, _window, cx| {
+                            if let Some(a) = this.remote_audio.as_ref() { let _ = a.stop(); }
+                            cx.notify();
+                        }))))
+                    .child(kv("state", remote_state))
+                    .child(kv("position / duration", format!("{remote_pos}ms / {remote_dur}ms")))
+                    .child(note(self.remote_status.clone())),
+            )
+            .child(
+                section("media_session")
+                    .child(note(
+                        "gpui_mobile's media_session package only implements Android \
+                         (see crates/gpui_mobile/src/packages/media_session/mod.rs: the ios module \
+                         doesn't exist, and every function's `#[cfg(not(target_os = \"android\"))]` \
+                         branch just returns Ok(()) unconditionally). On iOS these calls succeed but \
+                         are silent no-ops — no lock-screen media info actually appears.",
+                    ))
+                    .child(button("init / set_metadata / set_playback_state", cx.listener(|this, _, _window, cx| {
+                        let mut lines = Vec::new();
+                        lines.push(format!("init() -> {:?}", media_session::init()));
+                        lines.push(format!(
+                            "set_metadata() -> {:?}",
+                            media_session::set_metadata("GPUI Gallery Tone", "gpui_mobile", 3000)
+                        ));
+                        lines.push(format!(
+                            "set_playback_state() -> {:?}",
+                            media_session::set_playback_state(true, 0, 1.0)
+                        ));
+                        this.session_log = lines;
+                        gallery_log::push("media: media_session calls issued (iOS: no-op stub)");
+                        cx.notify();
+                    })))
+                    .children(self.session_log.iter().cloned().map(super::common::mono)),
+            )
+    }
 }
