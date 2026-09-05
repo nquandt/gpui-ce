@@ -188,29 +188,40 @@ impl Render for SecurityNotifyScreen {
                     .child(note(self.notif_status.clone())),
             )
             .child(
-                section("permission_handler").children(ALL_PERMISSIONS.iter().map(|&p| {
-                    let status = permission_handler::check_permission(p);
-                    row()
-                        .justify_between()
-                        .w_full()
-                        .child(kv(
-                            format!("{p:?}"),
-                            status
-                                .map(permission_status_label)
-                                .unwrap_or("error")
-                                .to_string(),
-                        ))
-                        .child(button(
-                            format!("Request {p:?}"),
-                            cx.listener(move |_this, _, _window, cx| {
-                                let result = permission_handler::request_permission(p);
-                                gallery_log::push(format!(
-                                    "security_notify: request {p:?} -> {result:?}"
-                                ));
-                                cx.notify();
-                            }),
-                        ))
-                })),
+                section("permission_handler")
+                    .child(note(
+                        "Permission::AppTrackingTransparency is omitted below: \
+                         check_permission()/request_permission() for it crash the whole app on \
+                         iOS (`+[ATTrackingManager trackingAuthorizationStatus]` is declared to \
+                         return u32 but the runtime returns NSUInteger/u64 — an objc2 type-code \
+                         mismatch, panic=abort, uncatchable). See \
+                         crates/gpui_mobile/src/packages/permission_handler/ios.rs:190-191.",
+                    ))
+                    .children(ALL_PERMISSIONS.iter().filter(|p| {
+                        !matches!(p, Permission::AppTrackingTransparency)
+                    }).map(|&p| {
+                        let status = permission_handler::check_permission(p);
+                        row()
+                            .justify_between()
+                            .w_full()
+                            .child(kv(
+                                format!("{p:?}"),
+                                status
+                                    .map(permission_status_label)
+                                    .unwrap_or("error")
+                                    .to_string(),
+                            ))
+                            .child(button(
+                                format!("Request {p:?}"),
+                                cx.listener(move |_this, _, _window, cx| {
+                                    let result = permission_handler::request_permission(p);
+                                    gallery_log::push(format!(
+                                        "security_notify: request {p:?} -> {result:?}"
+                                    ));
+                                    cx.notify();
+                                }),
+                            ))
+                    })),
             )
     }
 }
