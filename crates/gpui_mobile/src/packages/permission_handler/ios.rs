@@ -188,7 +188,7 @@ unsafe fn check_speech_authorization() -> Result<PermissionStatus, String> {
 }
 
 unsafe fn check_tracking_authorization() -> Result<PermissionStatus, String> {
-    let status: u32 = msg_send![class!(ATTrackingManager), trackingAuthorizationStatus];
+    let status: usize = msg_send![class!(ATTrackingManager), trackingAuthorizationStatus];
     Ok(match status {
         0 => PermissionStatus::Denied, // ATTrackingManagerAuthorizationStatusNotDetermined
         1 => PermissionStatus::Restricted, // ATTrackingManagerAuthorizationStatusRestricted

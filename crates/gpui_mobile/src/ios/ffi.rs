@@ -56,6 +56,7 @@ pub(crate) static IOS_WINDOW_LIST: OnceLock<WindowListWrapper> = OnceLock::new()
 /// Returns null if initialization fails.
 #[unsafe(no_mangle)]
 pub extern "C" fn gpui_ios_initialize() -> *mut c_void {
+    install_default_logger();
     log::info!("GPUI iOS: Initializing");
 
     // Initialize the app state
@@ -553,5 +554,43 @@ pub fn run_app() {
             log::info!("GPUI iOS: Invoking Application::run callback");
             callback();
         }
+    }
+}
+
+// ── Logging ──────────────────────────────────────────────────────────────────
+
+/// Minimal `log::Log` implementation that writes to stderr, which Xcode's
+/// console and `xcrun simctl launch --console` both capture.
+struct StderrLogger;
+
+impl log::Log for StderrLogger {
+    fn enabled(&self, metadata: &log::Metadata) -> bool {
+        metadata.level() <= log::Level::Info
+    }
+
+    fn log(&self, record: &log::Record) {
+        if self.enabled(record.metadata()) {
+            eprintln!(
+                "[{}] {}: {}",
+                record.level(),
+                record.target(),
+                record.args()
+            );
+        }
+    }
+
+    fn flush(&self) {}
+}
+
+/// Installs [`StderrLogger`] unless the host app already installed a logger.
+///
+/// Without a logger every `log::*` call in this crate is silently dropped,
+/// which makes on-device debugging (font resolution, platform-view errors,
+/// input routing) needlessly blind. Hosts that want a different sink
+/// (e.g. `oslog`) can install theirs before calling `gpui_ios_initialize`.
+fn install_default_logger() {
+    static LOGGER: StderrLogger = StderrLogger;
+    if log::set_logger(&LOGGER).is_ok() {
+        log::set_max_level(log::LevelFilter::Info);
     }
 }
