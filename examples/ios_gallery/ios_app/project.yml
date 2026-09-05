@@ -1,0 +1,99 @@
+name: GPUIGallery
+options:
+  bundleIdPrefix: dev.gpui-ce.examples
+  deploymentTarget:
+    iOS: "17.0"
+
+targets:
+  GPUIGallery:
+    type: application
+    platform: iOS
+    sources:
+      - path: AppDelegate.swift
+    info:
+      path: Info.plist
+      properties:
+        UILaunchScreen: {}
+        CFBundleURLTypes:
+          - CFBundleURLName: com.gpuice.iosgallery
+            CFBundleURLSchemes:
+              - gpuigallery
+        UIFileSharingEnabled: true
+        LSSupportsOpeningDocumentsInPlace: true
+        UIBackgroundModes:
+          - audio
+        NSCameraUsageDescription: "GPUI Gallery uses the camera to test the camera preview and capture screen."
+        NSMicrophoneUsageDescription: "GPUI Gallery uses the microphone to test audio recording."
+        NSPhotoLibraryUsageDescription: "GPUI Gallery reads photos to test the image picker."
+        NSPhotoLibraryAddUsageDescription: "GPUI Gallery saves photos to test the image picker."
+        NSLocationWhenInUseUsageDescription: "GPUI Gallery uses your location to test the location and maps screen."
+        NSContactsUsageDescription: "GPUI Gallery reads contacts to test the contacts integration."
+        NSCalendarsUsageDescription: "GPUI Gallery reads calendars to test the calendar integration."
+        NSFaceIDUsageDescription: "GPUI Gallery uses Face ID to test local authentication."
+        NSMotionUsageDescription: "GPUI Gallery uses motion sensors to test the sensors screen."
+        NSLocalNetworkUsageDescription: "GPUI Gallery uses the local network to test networking features."
+    settings:
+      base:
+        PRODUCT_BUNDLE_IDENTIFIER: com.gpuice.iosgallery
+        CODE_SIGN_STYLE: Automatic
+        DEVELOPMENT_TEAM: 9VDA767NN2
+        CODE_SIGN_IDENTITY: Apple Development
+        SWIFT_OBJC_BRIDGING_HEADER: Bridging/GPUIBridge.h
+        HEADER_SEARCH_PATHS: "$(SRCROOT)/Bridging"
+        "LIBRARY_SEARCH_PATHS[sdk=iphonesimulator*]": "$(SRCROOT)/../../../target/aarch64-apple-ios-sim/debug"
+        "LIBRARY_SEARCH_PATHS[sdk=iphoneos*]": "$(SRCROOT)/../../../target/aarch64-apple-ios/debug"
+        OTHER_LDFLAGS:
+          - "-lios_gallery"
+          - "-framework"
+          - "UIKit"
+          - "-framework"
+          - "Metal"
+          - "-framework"
+          - "MetalKit"
+          - "-framework"
+          - "QuartzCore"
+          - "-framework"
+          - "CoreGraphics"
+          - "-framework"
+          - "CoreText"
+          - "-framework"
+          - "CoreFoundation"
+          - "-framework"
+          - "AVFoundation"
+          - "-framework"
+          - "CoreMedia"
+          - "-framework"
+          - "Security"
+          - "-framework"
+          - "UniformTypeIdentifiers"
+          - "-framework"
+          - "WebKit"
+          - "-framework"
+          - "CoreLocation"
+          - "-framework"
+          - "MapKit"
+          - "-framework"
+          - "LocalAuthentication"
+          - "-framework"
+          - "UserNotifications"
+          - "-framework"
+          - "Contacts"
+          - "-framework"
+          - "EventKit"
+          - "-framework"
+          - "CoreMotion"
+          - "-framework"
+          - "SystemConfiguration"
+          - "-framework"
+          - "AudioToolbox"
+          - "-framework"
+          - "Photos"
+          - "-framework"
+          - "PhotosUI"
+          - "-framework"
+          - "StoreKit"
+          - "-framework"
+          - "MediaPlayer"
+          - "-lc++"
+        ENABLE_BITCODE: NO
+    scheme: {}

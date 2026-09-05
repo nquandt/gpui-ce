@@ -3733,6 +3733,18 @@ dependencies = [
 ]
 
 [[package]]
+name = "ios_gallery"
+version = "0.1.0"
+dependencies = [
+ "gpui-ce",
+ "gpui_ce_elements",
+ "gpui_mobile",
+ "log",
+ "serde",
+ "serde_json",
+]
+
+[[package]]
 name = "ios_text_input"
 version = "0.1.0"
 dependencies = [
