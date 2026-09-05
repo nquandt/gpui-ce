@@ -190,7 +190,7 @@ impl Render for SensorsScreen {
             .child(
                 section("in_app_review")
                     .child(note("Requests the App Store review sheet. iOS rate-limits this and gives no signal on whether it was actually shown."))
-                    .child(row()
+                    .child(row().flex_wrap()
                         .child(button(
                             "Check availability",
                             cx.listener(|this, _, _window, cx| {

@@ -125,7 +125,7 @@ impl Render for SecurityNotifyScreen {
                          is emulated here with a background timer that calls show() after 5s. Background \
                          the app right after tapping Schedule to see the banner.",
                     ))
-                    .child(row()
+                    .child(row().flex_wrap()
                         .child(button(
                             "Initialize",
                             cx.listener(|this, _, _window, cx| {

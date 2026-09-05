@@ -170,7 +170,7 @@ impl Render for CameraScreen {
                             .unwrap_or("error")
                             .to_string(),
                     ))
-                    .child(row()
+                    .child(row().flex_wrap()
                         .child(button(
                             "Request camera",
                             cx.listener(|this, _, _window, cx| {
@@ -204,7 +204,7 @@ impl Render for CameraScreen {
             }))
             .child(
                 section("session")
-                    .child(row()
+                    .child(row().flex_wrap()
                         .child(button(
                             "Create front",
                             cx.listener(|this, _, _window, cx| {
@@ -219,7 +219,7 @@ impl Render for CameraScreen {
                                 cx.notify();
                             }),
                         )))
-                    .child(row()
+                    .child(row().flex_wrap()
                         .child(button(
                             "Start preview",
                             cx.listener(|this, _, _window, cx| {
@@ -275,7 +275,7 @@ impl Render for CameraScreen {
             )
             .child(
                 section("flash / focus / zoom")
-                    .child(row()
+                    .child(row().flex_wrap()
                         .child(button(
                             "Flash off",
                             cx.listener(|this, _, _window, cx| this.apply_flash(FlashMode::Off, cx)),
@@ -288,7 +288,7 @@ impl Render for CameraScreen {
                             "Flash on",
                             cx.listener(|this, _, _window, cx| this.apply_flash(FlashMode::Always, cx)),
                         )))
-                    .child(row()
+                    .child(row().flex_wrap()
                         .child(button(
                             "Focus auto",
                             cx.listener(|this, _, _window, cx| this.apply_focus(FocusMode::Auto, cx)),
@@ -297,7 +297,7 @@ impl Render for CameraScreen {
                             "Focus locked",
                             cx.listener(|this, _, _window, cx| this.apply_focus(FocusMode::Locked, cx)),
                         )))
-                    .child(row()
+                    .child(row().flex_wrap()
                         .child(button(
                             "Zoom -",
                             cx.listener(|this, _, _window, cx| this.apply_zoom(this.zoom - 0.5, cx)),

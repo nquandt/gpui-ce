@@ -165,7 +165,7 @@ impl Render for WebviewScreen {
                                     .unwrap_or_else(|| div().size_full()),
                             ),
                     )
-                    .child(row()
+                    .child(row().flex_wrap()
                         .child(button(
                             "Back",
                             cx.listener(|this, _, _window, cx| {

@@ -192,7 +192,7 @@ impl Render for MediaScreen {
                     .child(kv("duration (from set_url)", format!("{}ms", self.video_duration_ms)))
                     .child(kv("playing (local)", self.video_playing.to_string()))
                     .child(note(CMTIME_CRASH_NOTE))
-                    .child(row()
+                    .child(row().flex_wrap()
                         .child(button("Play", cx.listener(|this, _, _window, cx| {
                             if let Some(v) = this.video.as_ref() {
                                 match v.play() {
@@ -221,7 +221,7 @@ impl Render for MediaScreen {
                                 && let Err(e) = v.seek(30_000) { this.video_status = format!("seek error: {e}"); }
                             cx.notify();
                         }))))
-                    .child(row()
+                    .child(row().flex_wrap()
                         .child(button("Vol 0.5", cx.listener(|this, _, _window, cx| {
                             if let Some(v) = this.video.as_ref() { let _ = v.set_volume(0.5); }
                             cx.notify();
@@ -283,7 +283,7 @@ impl Render for MediaScreen {
                         }
                         cx.notify();
                     })))
-                    .child(row()
+                    .child(row().flex_wrap()
                         .child(button("Pause tone", cx.listener(|this, _, _window, cx| {
                             if let Some(a) = this.tone_audio.as_ref() { let _ = a.pause(); }
                             this.tone_playing = false;
@@ -324,7 +324,7 @@ impl Render for MediaScreen {
                         }
                         cx.notify();
                     })))
-                    .child(row()
+                    .child(row().flex_wrap()
                         .child(button("Pause remote", cx.listener(|this, _, _window, cx| {
                             if let Some(a) = this.remote_audio.as_ref() { let _ = a.pause(); }
                             this.remote_playing = false;

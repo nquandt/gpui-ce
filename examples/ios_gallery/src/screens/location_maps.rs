@@ -147,7 +147,7 @@ impl Render for LocationMapsScreen {
                         permission.map(permission_label).unwrap_or("error").to_string(),
                     ))
                     .child(kv("service_enabled", format!("{service_enabled:?}")))
-                    .child(row()
+                    .child(row().flex_wrap()
                         .child(button(
                             "Request permission",
                             cx.listener(|this, _, _window, cx| {
@@ -180,7 +180,7 @@ impl Render for LocationMapsScreen {
                                 cx.notify();
                             }),
                         )))
-                    .child(row()
+                    .child(row().flex_wrap()
                         .child(button(
                             "Start stream",
                             cx.listener(|this, _, _window, cx| this.start_stream(cx)),
@@ -230,7 +230,7 @@ impl Render for LocationMapsScreen {
                          return Ok(()) without touching the MKMapView, so tapping these buttons \
                          will not visibly change the map.",
                     ))
-                    .child(row()
+                    .child(row().flex_wrap()
                         .child(button(
                             "set_center(SF)",
                             cx.listener(|this, _, _window, cx| {
