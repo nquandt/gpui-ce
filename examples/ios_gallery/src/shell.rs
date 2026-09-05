@@ -180,6 +180,25 @@ impl Gallery {
             )
             .child(
                 div()
+                    .id("dismiss_keyboard")
+                    .when(gpui_mobile::keyboard_height() <= 0.0, |this| {
+                        this.invisible()
+                    })
+                    .px_3()
+                    .py_1()
+                    .mr_2()
+                    .rounded_full()
+                    .bg(rgb(0x2c2c34))
+                    .text_color(rgb(0x8ab4f8))
+                    .text_size(px(12.0))
+                    .on_click(cx.listener(|_this, _, window, cx| {
+                        gallery_log::push("keyboard: dismissed from header");
+                        window.blur(cx);
+                    }))
+                    .child("keyboard ▾"),
+            )
+            .child(
+                div()
                     .id("tap_counter")
                     .px_3()
                     .py_1()

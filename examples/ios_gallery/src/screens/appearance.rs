@@ -90,6 +90,48 @@ impl Render for AppearanceScreen {
                     )),
             )
             .child(
+                section("Override window appearance (cx.set_window_appearance)")
+                    .child(note(
+                        "Forces the app's UIWindow to light or dark independent of \
+                         the system setting; the readout above should follow, and \
+                         System restores the default.",
+                    ))
+                    .child(
+                        div()
+                            .flex()
+                            .flex_row()
+                            .flex_wrap()
+                            .gap_2()
+                            .child(button(
+                                "Force light",
+                                cx.listener(|this, _, _window, cx| {
+                                    cx.set_window_appearance(Some(WindowAppearance::Light));
+                                    this.status = "set_window_appearance(Light)".into();
+                                    gallery_log::push(this.status.clone());
+                                    cx.notify();
+                                }),
+                            ))
+                            .child(button(
+                                "Force dark",
+                                cx.listener(|this, _, _window, cx| {
+                                    cx.set_window_appearance(Some(WindowAppearance::Dark));
+                                    this.status = "set_window_appearance(Dark)".into();
+                                    gallery_log::push(this.status.clone());
+                                    cx.notify();
+                                }),
+                            ))
+                            .child(button(
+                                "Follow system",
+                                cx.listener(|this, _, _window, cx| {
+                                    cx.set_window_appearance(None);
+                                    this.status = "set_window_appearance(None)".into();
+                                    gallery_log::push(this.status.clone());
+                                    cx.notify();
+                                }),
+                            )),
+                    ),
+            )
+            .child(
                 section("Force status bar style (gpui_mobile::set_system_chrome)")
                     .child(note(
                         "These only change the status bar's content style, not \

@@ -28,13 +28,62 @@ pub fn descriptor() -> ScreenDescriptor {
 }
 
 fn build(_window: &mut Window, cx: &mut App) -> AnyView {
-    cx.new(|cx| ClipboardScreen {
+    let screen = cx.new(|cx| ClipboardScreen {
         field: cx.new(|cx| EditableTextState::new(StringStorage::default(), cx)),
         pasted_text: None,
         pasted_image: None,
         status: String::new(),
-    })
-    .into()
+    });
+    // Debug hook for headless runs: `GALLERY_AUTO_PASTE=1` pastes an image one
+    // second after the screen opens, exercising the same path as the button.
+    if std::env::var_os("GALLERY_AUTO_PASTE").is_some() {
+        let weak = screen.downgrade();
+        cx.spawn(async move |cx| {
+            cx.background_executor()
+                .timer(std::time::Duration::from_secs(1))
+                .await;
+            weak.update(cx, |this, cx| this.paste_image(cx)).ok();
+        })
+        .detach();
+    }
+    screen.into()
+}
+
+impl ClipboardScreen {
+    fn paste_image(&mut self, cx: &mut Context<Self>) {
+        let this = self;
+        match cx.read_from_clipboard() {
+            Some(item) => {
+                let image = item.entries().iter().find_map(|entry| {
+                    if let ClipboardEntry::Image(image) = entry {
+                        Some(Arc::new(image.clone()))
+                    } else {
+                        None
+                    }
+                });
+                match image {
+                    Some(image) => {
+                        this.status = format!(
+                            "Pasted a {:?} image ({} bytes).",
+                            image.format,
+                            image.bytes.len()
+                        );
+                        this.pasted_image = Some(image);
+                    }
+                    None => {
+                        this.status = "Clipboard has no image entry.".into();
+                        this.pasted_image = None;
+                    }
+                }
+            }
+            None => {
+                this.status = "Clipboard is empty.".into();
+                this.pasted_image = None;
+            }
+        }
+        gallery_log::push("clipboard: paste image attempted");
+        cx.notify();
+    }
 }
 
 struct ClipboardScreen {
@@ -146,40 +195,7 @@ impl Render for ClipboardScreen {
                             ))
                             .child(button(
                                 "Paste image",
-                                cx.listener(|this, _, _window, cx| {
-                                    match cx.read_from_clipboard() {
-                                        Some(item) => {
-                                            let image = item.entries().iter().find_map(|entry| {
-                                                if let ClipboardEntry::Image(image) = entry {
-                                                    Some(Arc::new(image.clone()))
-                                                } else {
-                                                    None
-                                                }
-                                            });
-                                            match image {
-                                                Some(image) => {
-                                                    this.status = format!(
-                                                        "Pasted a {:?} image ({} bytes).",
-                                                        image.format,
-                                                        image.bytes.len()
-                                                    );
-                                                    this.pasted_image = Some(image);
-                                                }
-                                                None => {
-                                                    this.status =
-                                                        "Clipboard has no image entry.".into();
-                                                    this.pasted_image = None;
-                                                }
-                                            }
-                                        }
-                                        None => {
-                                            this.status = "Clipboard is empty.".into();
-                                            this.pasted_image = None;
-                                        }
-                                    }
-                                    gallery_log::push("clipboard: paste image attempted");
-                                    cx.notify();
-                                }),
+                                cx.listener(|this, _, _window, cx| this.paste_image(cx)),
                             )),
                     )
                     .child(match self.pasted_image.clone() {

@@ -113,18 +113,23 @@ impl Render for AnimationsScreen {
             )
             .child(
                 section("Bounce").child(
-                    div()
-                        .w(px(48.0))
-                        .h(px(48.0))
-                        .bg(rgb(0xff9a3c))
-                        .rounded_full()
-                        .with_animation(
-                            "bounce",
-                            Animation::new(Duration::from_millis(900))
-                                .repeat()
-                                .with_easing(bounce(ease_in_out)),
-                            |element, delta| element.mb(px(delta * 60.0)),
-                        ),
+                    div().h(px(112.0)).child(
+                        div()
+                            .relative()
+                            .w(px(48.0))
+                            .h(px(48.0))
+                            .bg(rgb(0xff9a3c))
+                            .rounded_full()
+                            .with_animation(
+                                "bounce",
+                                Animation::new(Duration::from_millis(900))
+                                    .repeat()
+                                    .with_easing(bounce(ease_in_out)),
+                                // Offset the ball itself; a margin would resize the
+                                // section instead of moving the ball.
+                                |element, delta| element.top(px(60.0 - delta * 60.0)),
+                            ),
+                    ),
                 ),
             )
             .child(

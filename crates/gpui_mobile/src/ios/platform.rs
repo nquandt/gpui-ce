@@ -380,6 +380,29 @@ impl Platform for IosPlatform {
         Ok(window)
     }
 
+    fn set_window_appearance(&self, appearance: Option<WindowAppearance>) {
+        // UIUserInterfaceStyle: 0 = unspecified (follow system), 1 = light, 2 = dark
+        let style: isize = match appearance {
+            None => 0,
+            Some(WindowAppearance::Light | WindowAppearance::VibrantLight) => 1,
+            Some(WindowAppearance::Dark | WindowAppearance::VibrantDark) => 2,
+        };
+        unsafe {
+            let app: *mut AnyObject = msg_send![class!(UIApplication), sharedApplication];
+            let windows: *mut AnyObject = msg_send![app, windows];
+            if windows.is_null() {
+                return;
+            }
+            let count: usize = msg_send![windows, count];
+            for index in 0..count {
+                let window: *mut AnyObject = msg_send![windows, objectAtIndex: index];
+                if !window.is_null() {
+                    let _: () = msg_send![window, setOverrideUserInterfaceStyle: style];
+                }
+            }
+        }
+    }
+
     fn window_appearance(&self) -> WindowAppearance {
         unsafe {
             let style: i64 = {
@@ -667,16 +690,18 @@ impl Platform for IosPlatform {
             if has_images {
                 let image: *mut AnyObject = msg_send![pasteboard, image];
                 if !image.is_null() {
-                    // Prefer PNG (lossless). `-[UIImage pngData]` (iOS 11+)
-                    // is the modern equivalent of the free-function
-                    // `UIImagePNGRepresentation`, and — being an
-                    // Objective-C method rather than a C symbol — needs no
-                    // extra framework linkage beyond the runtime lookup
-                    // `msg_send!` already does.
-                    let png_data: *mut AnyObject = msg_send![image, pngData];
+                    // Prefer PNG (lossless). `pngData()` only exists in Swift;
+                    // the Objective-C runtime API is the C function
+                    // `UIImagePNGRepresentation`, so a `pngData` selector
+                    // aborts with "method not found".
+                    unsafe extern "C" {
+                        fn UIImagePNGRepresentation(image: *mut AnyObject) -> *mut AnyObject;
+                    }
+                    let png_data: *mut AnyObject = UIImagePNGRepresentation(image);
                     if !png_data.is_null() {
                         let length: usize = msg_send![png_data, length];
-                        let bytes_ptr: *const u8 = msg_send![png_data, bytes];
+                        let bytes_ptr: *const std::ffi::c_void = msg_send![png_data, bytes];
+                        let bytes_ptr = bytes_ptr as *const u8;
                         if !bytes_ptr.is_null() && length > 0 {
                             let bytes = std::slice::from_raw_parts(bytes_ptr, length).to_vec();
                             let image = gpui::Image::from_bytes(gpui::ImageFormat::Png, bytes);
