@@ -25,12 +25,16 @@ const CARD_COUNT: usize = 50;
 fn build(_window: &mut Window, cx: &mut App) -> AnyView {
     cx.new(|_cx| ScrollingScreen {
         scroll_handle: UniformListScrollHandle::new(),
+        outer_handle: gpui::ScrollHandle::new(),
+        last_outer_offset: std::cell::Cell::new(gpui::Point::default()),
     })
     .into()
 }
 
 struct ScrollingScreen {
     scroll_handle: UniformListScrollHandle,
+    outer_handle: gpui::ScrollHandle,
+    last_outer_offset: std::cell::Cell<gpui::Point<gpui::Pixels>>,
 }
 
 fn swatch_color(index: usize) -> gpui::Hsla {
@@ -40,11 +44,21 @@ fn swatch_color(index: usize) -> gpui::Hsla {
 impl Render for ScrollingScreen {
     fn render(&mut self, _window: &mut Window, cx: &mut Context<Self>) -> impl IntoElement {
         let offset = self.scroll_handle.0.borrow().base_handle.offset();
+        let outer_offset = self.outer_handle.offset();
+        if outer_offset != self.last_outer_offset.get() {
+            log::info!(
+                "gallery scrolling: outer offset changed {:?} -> {:?}",
+                self.last_outer_offset.get(),
+                outer_offset
+            );
+            self.last_outer_offset.set(outer_offset);
+        }
 
         div()
             .id("scrolling-scroll")
             .overflow_y_scroll()
             .restrict_scroll_to_axis()
+            .track_scroll(&self.outer_handle)
             .on_scroll_wheel(|event, _window, _cx| {
                 log::info!(
                     "gallery scrolling: outer scroller got delta {:?} phase {:?}",
