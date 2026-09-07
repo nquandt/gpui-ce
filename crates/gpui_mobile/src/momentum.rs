@@ -120,7 +120,7 @@ impl VelocityTracker {
     /// Compute the release velocity in logical px/s.
     ///
     /// Uses a weighted least-squares fit over recent samples within
-    /// [`VELOCITY_WINDOW_SECS`] to produce a smooth estimate that
+    /// `VELOCITY_WINDOW_SECS` to produce a smooth estimate that
     /// emphasizes the most recent (fastest) portion of the gesture.
     /// Returns `(vx, vy)`.
     pub fn velocity(&self) -> (f32, f32) {

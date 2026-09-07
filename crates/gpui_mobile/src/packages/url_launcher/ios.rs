@@ -8,8 +8,11 @@ pub fn launch_url(url: &str) -> Result<bool, String> {
         if app.is_null() {
             return Err("Failed to get UIApplication.sharedApplication".into());
         }
-        let result: bool = msg_send![app, openURL: nsurl];
-        Ok(result)
+        // `openURL:` was deprecated in iOS 10 and no longer opens anything on
+        // current releases; the options/completion variant is the live API.
+        let options: *mut AnyObject = msg_send![class!(NSDictionary), dictionary];
+        let _: () = msg_send![app, openURL: nsurl, options: options, completionHandler: std::ptr::null::<AnyObject>()];
+        Ok(true)
     }
 }
 

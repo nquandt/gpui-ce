@@ -12,7 +12,7 @@
 //! gpui_ios_request_frame(ptr)  // called every CADisplayLink tick
 //! ```
 
-use gpui::{App, AppContext, Application, RequestFrameOptions, WindowOptions};
+use gpui::{App, AppContext, AppLifecyclePhase, Application, RequestFrameOptions, WindowOptions};
 use std::ffi::c_void;
 use std::rc::Rc;
 use std::sync::OnceLock;
@@ -56,6 +56,7 @@ pub(crate) static IOS_WINDOW_LIST: OnceLock<WindowListWrapper> = OnceLock::new()
 /// Returns null if initialization fails.
 #[unsafe(no_mangle)]
 pub extern "C" fn gpui_ios_initialize() -> *mut c_void {
+    install_default_logger();
     log::info!("GPUI iOS: Initializing");
 
     // Initialize the app state
@@ -159,6 +160,8 @@ pub extern "C" fn gpui_ios_did_finish_launching(_app_ptr: *mut c_void) {
 pub extern "C" fn gpui_ios_will_enter_foreground(_app_ptr: *mut c_void) {
     log::info!("GPUI iOS: Will enter foreground");
 
+    super::platform::notify_app_lifecycle(AppLifecyclePhase::Foreground);
+
     // Notify all windows that they're becoming active
     if let Some(wrapper) = IOS_WINDOW_LIST.get() {
         unsafe {
@@ -180,6 +183,8 @@ pub extern "C" fn gpui_ios_will_enter_foreground(_app_ptr: *mut c_void) {
 #[unsafe(no_mangle)]
 pub extern "C" fn gpui_ios_did_become_active(_app_ptr: *mut c_void) {
     log::info!("GPUI iOS: Did become active");
+
+    super::platform::notify_app_lifecycle(AppLifecyclePhase::Active);
 
     // App is now fully active - windows should be notified
     if let Some(wrapper) = IOS_WINDOW_LIST.get() {
@@ -203,6 +208,8 @@ pub extern "C" fn gpui_ios_did_become_active(_app_ptr: *mut c_void) {
 pub extern "C" fn gpui_ios_will_resign_active(_app_ptr: *mut c_void) {
     log::info!("GPUI iOS: Will resign active");
 
+    super::platform::notify_app_lifecycle(AppLifecyclePhase::Inactive);
+
     // App is about to become inactive
     if let Some(wrapper) = IOS_WINDOW_LIST.get() {
         unsafe {
@@ -225,6 +232,8 @@ pub extern "C" fn gpui_ios_will_resign_active(_app_ptr: *mut c_void) {
 #[unsafe(no_mangle)]
 pub extern "C" fn gpui_ios_did_enter_background(_app_ptr: *mut c_void) {
     log::info!("GPUI iOS: Did enter background");
+
+    super::platform::notify_app_lifecycle(AppLifecyclePhase::Background);
 
     // Notify windows they're no longer visible
     if let Some(wrapper) = IOS_WINDOW_LIST.get() {
@@ -289,12 +298,11 @@ pub extern "C" fn gpui_ios_request_frame(window_ptr: *mut c_void) {
     // Safety: window_ptr must be a valid pointer to an IosWindow
     let window = unsafe { &*(window_ptr as *const super::window::IosWindow) };
 
-    // ── Momentum scrolling ───────────────────────────────────────────────
-    // Pump the momentum scroller BEFORE the render callback so that any
-    // synthetic ScrollWheel events are processed during this frame's
-    // layout/paint cycle.  This produces the smooth, decelerating inertia
-    // scroll that users expect on iOS after a fling gesture.
-    window.pump_momentum();
+    // ── Insets animation ─────────────────────────────────────────────────
+    // Interpolates `WindowInsets::ime` across the keyboard's show/hide
+    // animation curve, firing `on_insets_changed` on every frame until the
+    // animation settles (see `IosWindow::pump_insets_animation`).
+    window.pump_insets_animation();
 
     // Check if text input arrived since last frame — if so, force a render
     // so drain_pending_text() runs and the UI updates.
@@ -419,7 +427,12 @@ pub extern "C" fn gpui_ios_handle_open_url(url_ptr: *mut c_void) {
 
     #[cfg(feature = "deeplink")]
     {
+        super::platform::notify_open_urls(vec![url_string.clone()]);
         crate::packages::deeplink::ios::handle_open_url(url_string);
+    }
+    #[cfg(not(feature = "deeplink"))]
+    {
+        super::platform::notify_open_urls(vec![url_string]);
     }
 }
 
@@ -507,6 +520,10 @@ pub fn run_app() {
 
     let platform = Rc::new(super::IosPlatform::new());
     let handle = Application::with_platform(platform).run_embedded(|cx: &mut App| {
+        // GPUI starts with a `NullHttpClient`; give apps a working default so
+        // remote images and other `cx.http_client()` users function. The app
+        // callback may replace it.
+        cx.set_http_client(std::sync::Arc::new(super::IosHttpClient));
         if let Some(cb) = take_app_callback() {
             log::info!("GPUI iOS: Invoking user-provided app callback");
             cb(cx);
@@ -534,5 +551,52 @@ pub fn run_app() {
             log::info!("GPUI iOS: Invoking Application::run callback");
             callback();
         }
+    }
+}
+
+// ── Logging ──────────────────────────────────────────────────────────────────
+
+/// Minimal `log::Log` implementation that writes to stderr, which Xcode's
+/// console and `xcrun simctl launch --console` both capture.
+struct StderrLogger;
+
+impl log::Log for StderrLogger {
+    fn enabled(&self, metadata: &log::Metadata) -> bool {
+        metadata.level() <= log::max_level()
+    }
+
+    fn log(&self, record: &log::Record) {
+        if self.enabled(record.metadata()) {
+            eprintln!(
+                "[{}] {}: {}",
+                record.level(),
+                record.target(),
+                record.args()
+            );
+        }
+    }
+
+    fn flush(&self) {}
+}
+
+/// Installs [`StderrLogger`] unless the host app already installed a logger.
+///
+/// Without a logger every `log::*` call in this crate is silently dropped,
+/// which makes on-device debugging (font resolution, platform-view errors,
+/// input routing) needlessly blind. Hosts that want a different sink
+/// (e.g. `oslog`) can install theirs before calling `gpui_ios_initialize`.
+fn install_default_logger() {
+    static LOGGER: StderrLogger = StderrLogger;
+    if log::set_logger(&LOGGER).is_ok() {
+        // `RUST_LOG=debug` (e.g. via `devicectl ... --environment-variables`)
+        // raises the level; the default keeps per-touch chatter out.
+        let level = match std::env::var("RUST_LOG").as_deref() {
+            Ok("trace") => log::LevelFilter::Trace,
+            Ok("debug") => log::LevelFilter::Debug,
+            Ok("warn") => log::LevelFilter::Warn,
+            Ok("error") => log::LevelFilter::Error,
+            _ => log::LevelFilter::Info,
+        };
+        log::set_max_level(level);
     }
 }

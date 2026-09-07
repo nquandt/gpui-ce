@@ -10,17 +10,21 @@
 pub(crate) mod cg_types;
 mod dispatcher;
 mod display;
+mod document_picker;
 mod events;
 pub mod ffi;
+pub mod http_client;
 mod platform;
 pub mod platform_view;
 mod text_input;
+mod text_input_view;
 mod text_system;
 pub mod util;
 mod window;
 
 pub(crate) use dispatcher::*;
 pub(crate) use display::*;
+pub use http_client::IosHttpClient;
 pub use platform::*;
 pub(crate) use text_system::*;
 pub use window::set_status_bar_style;

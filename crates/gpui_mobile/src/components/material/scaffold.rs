@@ -38,7 +38,7 @@ use super::theme::MaterialTheme;
 /// - **top_bar** — typically a [`TopAppBar`](super::app_bar::TopAppBar)
 /// - **body** — the main scrollable content area
 /// - **bottom_bar** — typically a [`NavigationBar`](super::navigation_bar::NavigationBarBuilder)
-///   or [`BottomAppBar`](super::bottom_app_bar::BottomAppBar)
+///   or [`BottomAppBar`](super::list_tile::BottomAppBar)
 /// - **floating_action_button** — an optional FAB positioned above the bottom bar
 /// - **drawer** — an optional side navigation drawer overlay
 /// - **snackbar** — an optional snackbar message shown above the bottom bar
@@ -98,7 +98,7 @@ impl Scaffold {
     /// Set the bottom bar element.
     ///
     /// Typically built with [`NavigationBarBuilder`](super::navigation_bar::NavigationBarBuilder)
-    /// or [`BottomAppBar`](super::bottom_app_bar::BottomAppBar).
+    /// or [`BottomAppBar`](super::list_tile::BottomAppBar).
     pub fn bottom_bar(mut self, element: impl IntoElement) -> Self {
         self.bottom_bar = Some(element.into_any_element());
         self

@@ -53,14 +53,16 @@ fn is_simulator() -> bool {
 }
 
 unsafe fn nsstring_to_string(ns: *mut AnyObject) -> String {
-    if ns.is_null() {
-        return String::new();
+    unsafe {
+        if ns.is_null() {
+            return String::new();
+        }
+        let utf8: *const i8 = msg_send![ns, UTF8String];
+        if utf8.is_null() {
+            return String::new();
+        }
+        CStr::from_ptr(utf8).to_string_lossy().into_owned()
     }
-    let utf8: *const i8 = msg_send![ns, UTF8String];
-    if utf8.is_null() {
-        return String::new();
-    }
-    CStr::from_ptr(utf8).to_string_lossy().into_owned()
 }
 
 // libc types needed for uname
@@ -74,7 +76,7 @@ mod libc {
         pub machine: [i8; 256],
     }
 
-    extern "C" {
+    unsafe extern "C" {
         pub fn uname(buf: *mut utsname) -> i32;
     }
 }

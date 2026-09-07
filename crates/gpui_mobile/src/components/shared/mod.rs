@@ -12,11 +12,11 @@
 //! | Component | Description |
 //! |-----------|-------------|
 //! | [`progress_bars`] / [`progress_row`] | Labelled progress bar tracks |
-//! | [`avatars`] | Avatar circles with initials, status indicators, and stacked groups |
+//! | [`mod@avatars`] | Avatar circles with initials, status indicators, and stacked groups |
 //! | [`avatar`] / [`avatar_status`] | Individual avatar primitives |
-//! | [`badges`] | Solid, outline, and dot-indicator badge variants |
+//! | [`mod@badges`] | Solid, outline, and dot-indicator badge variants |
 //! | [`badge_solid`] / [`badge_outline`] / [`icon_with_badge`] | Individual badge primitives |
-//! | [`stat_cards`] / [`stat_card`] | Metric cards with title, value, and trend |
+//! | [`stat_cards()`] / [`stat_card`] | Metric cards with title, value, and trend |
 //! | [`skeleton_loaders`] | Placeholder loading skeletons for cards, text, and images |
 
 pub mod avatars;

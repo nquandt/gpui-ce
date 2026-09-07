@@ -329,8 +329,11 @@ struct CMTime {
 }
 
 unsafe impl Encode for CMTime {
+    // `CMTime` is a typedef of an anonymous struct, so its Objective-C type
+    // encoding is `{?=qiIq}`; naming it "CMTime" here makes objc2's debug
+    // encoding verification abort the process on every `currentTime` call.
     const ENCODING: Encoding = Encoding::Struct(
-        "CMTime",
+        "?",
         &[
             Encoding::LongLong,
             Encoding::Int,
@@ -347,7 +350,7 @@ unsafe impl RefEncode for CMTime {
 /// CMTimeMake(value, timescale) — construct a CMTime.
 fn cmtime_make(value: i64, timescale: i32) -> CMTime {
     // Call the CoreMedia C function directly.
-    extern "C" {
+    unsafe extern "C" {
         fn CMTimeMake(value: i64, timescale: i32) -> CMTime;
     }
     unsafe { CMTimeMake(value, timescale) }
@@ -371,24 +374,26 @@ fn cmtime_to_ms(time: CMTime) -> i64 {
 use crate::ios::util::nsstring;
 
 unsafe fn nsstring_from_str(s: &str) -> *mut AnyObject {
-    nsstring(s)
+    unsafe { nsstring(s) }
 }
 
 unsafe fn nsurl_from_str(url: &str) -> Result<*mut AnyObject, String> {
-    let ns_string = nsstring_from_str(url);
-    if ns_string.is_null() {
-        return Err("Failed to create NSString".into());
-    }
-    let ns_url: *mut AnyObject = msg_send![class!(NSURL), URLWithString: ns_string];
-    if ns_url.is_null() {
-        // Maybe it's a file path
-        let ns_url: *mut AnyObject = msg_send![class!(NSURL), fileURLWithPath: ns_string];
-        if ns_url.is_null() {
-            return Err("Failed to create NSURL".into());
+    unsafe {
+        let ns_string = nsstring_from_str(url);
+        if ns_string.is_null() {
+            return Err("Failed to create NSString".into());
         }
-        return Ok(ns_url);
+        let ns_url: *mut AnyObject = msg_send![class!(NSURL), URLWithString: ns_string];
+        if ns_url.is_null() {
+            // Maybe it's a file path
+            let ns_url: *mut AnyObject = msg_send![class!(NSURL), fileURLWithPath: ns_string];
+            if ns_url.is_null() {
+                return Err("Failed to create NSURL".into());
+            }
+            return Ok(ns_url);
+        }
+        Ok(ns_url)
     }
-    Ok(ns_url)
 }
 
 /// Get the duration in ms from an AVPlayer's currentItem.

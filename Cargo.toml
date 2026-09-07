@@ -26,6 +26,8 @@ members = [
   "./crates/gpui_mobile/",
   "./examples/ios_counter/",
   "./examples/ios_browser/",
+  "./examples/ios_text_input/",
+  "./examples/ios_gallery/",
 ]
 default-members = ["./crates/gpui/"]
 resolver = "3"

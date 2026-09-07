@@ -35,16 +35,18 @@ pub fn get_package_info() -> Result<PackageInfo, String> {
 }
 
 unsafe fn nsdict_string(dict: *mut AnyObject, key: &str) -> Option<String> {
-    let key_nsstring = nsstring(key);
-    let value: *mut AnyObject = msg_send![dict, objectForKey: key_nsstring];
-    if value.is_null() {
-        return None;
+    unsafe {
+        let key_nsstring = nsstring(key);
+        let value: *mut AnyObject = msg_send![dict, objectForKey: key_nsstring];
+        if value.is_null() {
+            return None;
+        }
+        let utf8: *const i8 = msg_send![value, UTF8String];
+        if utf8.is_null() {
+            return None;
+        }
+        Some(CStr::from_ptr(utf8).to_string_lossy().into_owned())
     }
-    let utf8: *const i8 = msg_send![value, UTF8String];
-    if utf8.is_null() {
-        return None;
-    }
-    Some(CStr::from_ptr(utf8).to_string_lossy().into_owned())
 }
 
 use crate::ios::util::nsstring;

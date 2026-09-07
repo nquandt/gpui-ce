@@ -21,3 +21,26 @@ pub unsafe fn nsstring(s: &str) -> *mut AnyObject {
     ];
     msg_send![ns, autorelease]
 }
+
+// ── UniformTypeIdentifiers globals ──────────────────────────────────────────
+//
+// `UTType` content-type constants used by `UIDocumentPickerViewController`.
+// These are `UTType *const` globals exported by the
+// UniformTypeIdentifiers.framework (available since iOS 14).
+#[link(name = "UniformTypeIdentifiers", kind = "framework")]
+unsafe extern "C" {
+    static UTTypeItem: *mut AnyObject;
+    static UTTypeFolder: *mut AnyObject;
+}
+
+/// The `UTType` representing "any item" (files and packages) — used to let
+/// `UIDocumentPickerViewController` open arbitrary files.
+pub fn ut_type_item() -> *mut AnyObject {
+    unsafe { UTTypeItem }
+}
+
+/// The `UTType` representing a folder — used to let
+/// `UIDocumentPickerViewController` open directories only.
+pub fn ut_type_folder() -> *mut AnyObject {
+    unsafe { UTTypeFolder }
+}

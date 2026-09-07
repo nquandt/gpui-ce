@@ -10,44 +10,53 @@ const EK_SPAN_THIS_EVENT: u64 = 0;
 
 /// Create an EKEventStore instance.
 unsafe fn new_event_store() -> *mut AnyObject {
-    let store: *mut AnyObject = msg_send![class!(EKEventStore), alloc];
-    let store: *mut AnyObject = msg_send![store, init];
-    store
+    unsafe {
+        let store: *mut AnyObject = msg_send![class!(EKEventStore), alloc];
+        let store: *mut AnyObject = msg_send![store, init];
+        store
+    }
 }
 
 /// Convert a Unix timestamp in milliseconds to an NSDate.
 unsafe fn nsdate_from_ms(ms: i64) -> *mut AnyObject {
-    let seconds = (ms as f64) / 1000.0;
-    let date: *mut AnyObject = msg_send![class!(NSDate), dateWithTimeIntervalSince1970: seconds];
-    date
+    unsafe {
+        let seconds = (ms as f64) / 1000.0;
+        let date: *mut AnyObject =
+            msg_send![class!(NSDate), dateWithTimeIntervalSince1970: seconds];
+        date
+    }
 }
 
 /// Convert an NSDate to a Unix timestamp in milliseconds.
 unsafe fn ms_from_nsdate(date: *mut AnyObject) -> i64 {
-    if date.is_null() {
-        return 0;
+    unsafe {
+        if date.is_null() {
+            return 0;
+        }
+        let seconds: f64 = msg_send![date, timeIntervalSince1970];
+        (seconds * 1000.0) as i64
     }
-    let seconds: f64 = msg_send![date, timeIntervalSince1970];
-    (seconds * 1000.0) as i64
 }
 
 /// Read a UTF-8 string from an NSString pointer. Returns empty string if null.
 unsafe fn nsstring_to_string(ns: *mut AnyObject) -> String {
-    if ns.is_null() {
-        return String::new();
+    unsafe {
+        if ns.is_null() {
+            return String::new();
+        }
+        let utf8: *const std::ffi::c_char = msg_send![ns, UTF8String];
+        if utf8.is_null() {
+            return String::new();
+        }
+        let c_str = std::ffi::CStr::from_ptr(utf8);
+        c_str.to_string_lossy().into_owned()
     }
-    let utf8: *const std::ffi::c_char = msg_send![ns, UTF8String];
-    if utf8.is_null() {
-        return String::new();
-    }
-    let c_str = std::ffi::CStr::from_ptr(utf8);
-    c_str.to_string_lossy().into_owned()
 }
 
 use crate::ios::util::nsstring;
 
 unsafe fn nsstring_from_str(s: &str) -> *mut AnyObject {
-    nsstring(s)
+    unsafe { nsstring(s) }
 }
 
 pub fn get_calendars() -> Result<Vec<Calendar>, String> {
@@ -314,46 +323,48 @@ pub fn delete_event(event_id: &str) -> Result<bool, String> {
 
 /// Convert a CGColor to an ARGB u32 value.
 unsafe fn cgcolor_to_argb(cg_color: *mut AnyObject) -> u32 {
-    if cg_color.is_null() {
-        return 0xFF000000; // Default to opaque black
-    }
-
-    // Get the number of components
-    let num_components: usize = {
-        extern "C" {
-            fn CGColorGetNumberOfComponents(color: *const AnyObject) -> usize;
+    unsafe {
+        if cg_color.is_null() {
+            return 0xFF000000; // Default to opaque black
         }
-        CGColorGetNumberOfComponents(cg_color)
-    };
 
-    // Get the component array
-    let components: *const f64 = {
-        extern "C" {
-            fn CGColorGetComponents(color: *const AnyObject) -> *const f64;
+        // Get the number of components
+        let num_components: usize = {
+            unsafe extern "C" {
+                fn CGColorGetNumberOfComponents(color: *const AnyObject) -> usize;
+            }
+            CGColorGetNumberOfComponents(cg_color)
+        };
+
+        // Get the component array
+        let components: *const f64 = {
+            unsafe extern "C" {
+                fn CGColorGetComponents(color: *const AnyObject) -> *const f64;
+            }
+            CGColorGetComponents(cg_color)
+        };
+
+        if components.is_null() {
+            return 0xFF000000;
         }
-        CGColorGetComponents(cg_color)
-    };
 
-    if components.is_null() {
-        return 0xFF000000;
+        let (r, g, b, a) = if num_components >= 4 {
+            // RGBA color space
+            (
+                (*components.add(0) * 255.0) as u32,
+                (*components.add(1) * 255.0) as u32,
+                (*components.add(2) * 255.0) as u32,
+                (*components.add(3) * 255.0) as u32,
+            )
+        } else if num_components >= 2 {
+            // Grayscale + alpha
+            let gray = (*components.add(0) * 255.0) as u32;
+            let alpha = (*components.add(1) * 255.0) as u32;
+            (gray, gray, gray, alpha)
+        } else {
+            return 0xFF000000;
+        };
+
+        (a << 24) | (r << 16) | (g << 8) | b
     }
-
-    let (r, g, b, a) = if num_components >= 4 {
-        // RGBA color space
-        (
-            (*components.add(0) * 255.0) as u32,
-            (*components.add(1) * 255.0) as u32,
-            (*components.add(2) * 255.0) as u32,
-            (*components.add(3) * 255.0) as u32,
-        )
-    } else if num_components >= 2 {
-        // Grayscale + alpha
-        let gray = (*components.add(0) * 255.0) as u32;
-        let alpha = (*components.add(1) * 255.0) as u32;
-        (gray, gray, gray, alpha)
-    } else {
-        return 0xFF000000;
-    };
-
-    (a << 24) | (r << 16) | (g << 8) | b
 }

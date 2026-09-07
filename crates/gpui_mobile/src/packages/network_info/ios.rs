@@ -2,7 +2,7 @@ use super::NetworkInfo;
 use std::ffi::CStr;
 
 #[link(name = "SystemConfiguration", kind = "framework")]
-extern "C" {}
+unsafe extern "C" {}
 
 pub fn get_network_info() -> Result<NetworkInfo, String> {
     let mut info = NetworkInfo::default();
@@ -95,7 +95,7 @@ type CFDictionaryRef = *const std::ffi::c_void;
 type CFStringRef = *const std::ffi::c_void;
 type CFIndex = isize;
 
-extern "C" {
+unsafe extern "C" {
     fn CNCopySupportedInterfaces() -> CFArrayRef;
     fn CNCopyCurrentNetworkInfo(interface_name: CFStringRef) -> CFDictionaryRef;
     fn CFArrayGetCount(array: CFArrayRef) -> CFIndex;
@@ -123,30 +123,34 @@ extern "C" {
 const CF_STRING_ENCODING_UTF8: u32 = 0x08000100;
 
 unsafe fn cfstring_from_static(s: &[u8]) -> CFStringRef {
-    CFStringCreateWithCString(
-        std::ptr::null(),
-        s.as_ptr() as *const i8,
-        CF_STRING_ENCODING_UTF8,
-    )
+    unsafe {
+        CFStringCreateWithCString(
+            std::ptr::null(),
+            s.as_ptr() as *const i8,
+            CF_STRING_ENCODING_UTF8,
+        )
+    }
 }
 
 unsafe fn cfstring_to_string(cf: CFStringRef) -> Option<String> {
-    if cf.is_null() {
-        return None;
-    }
-    // Try fast path
-    let ptr = CFStringGetCStringPtr(cf, CF_STRING_ENCODING_UTF8);
-    if !ptr.is_null() {
-        return Some(CStr::from_ptr(ptr).to_string_lossy().into_owned());
-    }
-    // Slow path: copy to buffer
-    let len = CFStringGetLength(cf);
-    let buf_size = len * 4 + 1; // UTF-8 worst case
-    let mut buf = vec![0i8; buf_size as usize];
-    if CFStringGetCString(cf, buf.as_mut_ptr(), buf_size, CF_STRING_ENCODING_UTF8) {
-        Some(CStr::from_ptr(buf.as_ptr()).to_string_lossy().into_owned())
-    } else {
-        None
+    unsafe {
+        if cf.is_null() {
+            return None;
+        }
+        // Try fast path
+        let ptr = CFStringGetCStringPtr(cf, CF_STRING_ENCODING_UTF8);
+        if !ptr.is_null() {
+            return Some(CStr::from_ptr(ptr).to_string_lossy().into_owned());
+        }
+        // Slow path: copy to buffer
+        let len = CFStringGetLength(cf);
+        let buf_size = len * 4 + 1; // UTF-8 worst case
+        let mut buf = vec![0i8; buf_size as usize];
+        if CFStringGetCString(cf, buf.as_mut_ptr(), buf_size, CF_STRING_ENCODING_UTF8) {
+            Some(CStr::from_ptr(buf.as_ptr()).to_string_lossy().into_owned())
+        } else {
+            None
+        }
     }
 }
 
@@ -179,7 +183,7 @@ struct ifaddrs {
     ifa_data: *mut std::ffi::c_void,
 }
 
-extern "C" {
+unsafe extern "C" {
     fn getifaddrs(ifap: *mut *mut ifaddrs) -> i32;
     fn freeifaddrs(ifa: *mut ifaddrs);
 }

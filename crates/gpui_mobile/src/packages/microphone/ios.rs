@@ -4,7 +4,7 @@ use objc2::{class, msg_send};
 use std::sync::Mutex;
 
 #[link(name = "AVFoundation", kind = "framework")]
-extern "C" {}
+unsafe extern "C" {}
 
 struct RecorderState {
     recorder: *mut AnyObject, // AVAudioRecorder
@@ -199,22 +199,24 @@ pub fn get_amplitude() -> Result<f64, String> {
 use crate::ios::util::nsstring;
 
 unsafe fn number_with_int(val: i32) -> *mut AnyObject {
-    msg_send![class!(NSNumber), numberWithInt: val]
+    unsafe { msg_send![class!(NSNumber), numberWithInt: val] }
 }
 
 unsafe fn number_with_float(val: f64) -> *mut AnyObject {
-    msg_send![class!(NSNumber), numberWithDouble: val]
+    unsafe { msg_send![class!(NSNumber), numberWithDouble: val] }
 }
 
 unsafe fn objc_string_to_rust(ns: *mut AnyObject) -> String {
-    if ns.is_null() {
-        return String::new();
+    unsafe {
+        if ns.is_null() {
+            return String::new();
+        }
+        let cstr: *const std::ffi::c_char = msg_send![ns, UTF8String];
+        if cstr.is_null() {
+            return String::new();
+        }
+        std::ffi::CStr::from_ptr(cstr)
+            .to_string_lossy()
+            .into_owned()
     }
-    let cstr: *const std::ffi::c_char = msg_send![ns, UTF8String];
-    if cstr.is_null() {
-        return String::new();
-    }
-    std::ffi::CStr::from_ptr(cstr)
-        .to_string_lossy()
-        .into_owned()
 }

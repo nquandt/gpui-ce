@@ -5,7 +5,7 @@ use std::path::PathBuf;
 
 pub fn temporary_directory() -> Result<PathBuf, String> {
     unsafe {
-        extern "C" {
+        unsafe extern "C" {
             fn NSTemporaryDirectory() -> *mut AnyObject;
         }
         let path = NSTemporaryDirectory();
@@ -28,7 +28,7 @@ pub fn support_directory() -> Result<PathBuf, String> {
 /// Calls NSSearchPathForDirectoriesInDomains(directory, NSUserDomainMask, YES)
 fn search_path_directory(directory: u64) -> Result<PathBuf, String> {
     unsafe {
-        extern "C" {
+        unsafe extern "C" {
             fn NSSearchPathForDirectoriesInDomains(
                 directory: u64,
                 domain_mask: u64,
@@ -55,13 +55,15 @@ fn search_path_directory(directory: u64) -> Result<PathBuf, String> {
 }
 
 unsafe fn nsstring_to_pathbuf(ns: *mut AnyObject) -> Result<PathBuf, String> {
-    if ns.is_null() {
-        return Err("NSString is nil".into());
+    unsafe {
+        if ns.is_null() {
+            return Err("NSString is nil".into());
+        }
+        let utf8: *const i8 = msg_send![ns, UTF8String];
+        if utf8.is_null() {
+            return Err("UTF8String returned null".into());
+        }
+        let s = CStr::from_ptr(utf8).to_string_lossy().into_owned();
+        Ok(PathBuf::from(s))
     }
-    let utf8: *const i8 = msg_send![ns, UTF8String];
-    if utf8.is_null() {
-        return Err("UTF8String returned null".into());
-    }
-    let s = CStr::from_ptr(utf8).to_string_lossy().into_owned();
-    Ok(PathBuf::from(s))
 }

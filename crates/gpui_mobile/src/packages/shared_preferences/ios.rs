@@ -28,7 +28,6 @@ impl IosSharedPreferences {
             let ns_key = nsstring(key);
             let ns_value = nsstring(value);
             let _: () = msg_send![defaults, setObject: ns_value, forKey: ns_key];
-            let _: () = msg_send![defaults, synchronize];
             Ok(())
         }
     }
@@ -52,7 +51,6 @@ impl IosSharedPreferences {
             let defaults = user_defaults();
             let ns_key = nsstring(key);
             let _: () = msg_send![defaults, setInteger: value, forKey: ns_key];
-            let _: () = msg_send![defaults, synchronize];
             Ok(())
         }
     }
@@ -76,7 +74,6 @@ impl IosSharedPreferences {
             let defaults = user_defaults();
             let ns_key = nsstring(key);
             let _: () = msg_send![defaults, setBool: value, forKey: ns_key];
-            let _: () = msg_send![defaults, synchronize];
             Ok(())
         }
     }
@@ -86,7 +83,6 @@ impl IosSharedPreferences {
             let defaults = user_defaults();
             let ns_key = nsstring(key);
             let _: () = msg_send![defaults, removeObjectForKey: ns_key];
-            let _: () = msg_send![defaults, synchronize];
             Ok(())
         }
     }
@@ -104,7 +100,6 @@ impl IosSharedPreferences {
                 let key: *mut AnyObject = msg_send![keys, objectAtIndex: i];
                 let _: () = msg_send![defaults, removeObjectForKey: key];
             }
-            let _: () = msg_send![defaults, synchronize];
             Ok(())
         }
     }
@@ -126,9 +121,11 @@ unsafe fn user_defaults() -> *mut AnyObject {
 use crate::ios::util::nsstring;
 
 unsafe fn nsstring_to_string(ns: *mut AnyObject) -> String {
-    let utf8: *const i8 = msg_send![ns, UTF8String];
-    if utf8.is_null() {
-        return String::new();
+    unsafe {
+        let utf8: *const i8 = msg_send![ns, UTF8String];
+        if utf8.is_null() {
+            return String::new();
+        }
+        CStr::from_ptr(utf8).to_string_lossy().into_owned()
     }
-    CStr::from_ptr(utf8).to_string_lossy().into_owned()
 }

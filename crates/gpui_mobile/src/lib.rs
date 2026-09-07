@@ -162,6 +162,18 @@ thread_local! {
 ///
 /// Only one callback can be active at a time. Call with `None` to clear it.
 /// This is typically called by the text input component when it gains focus.
+///
+/// This is a legacy stopgap that predates real `UITextInput`/`InputConnection`
+/// bridging. GPUI views built the normal way — `Render` + `EntityInputHandler`,
+/// via `window.handle_input(&focus_handle, ElementInputHandler::new(...), cx)`
+/// — get native text editing (selection, IME composition, keyboard
+/// attributes) automatically on iOS without this callback at all; prefer
+/// that. This bridge is kept only as a fallback for callers (e.g.
+/// `components::material::text_input`, `examples/ios_browser`) that haven't
+/// migrated yet.
+#[deprecated(
+    note = "Use `EntityInputHandler` (see crates/gpui/src/input.rs and crates/gpui/examples/input.rs) instead — it now gets real native text input support on iOS via UITextInput."
+)]
 pub fn set_text_input_callback(callback: Option<TextInputCallbackFn>) {
     TEXT_INPUT_CALLBACK.with(|cb| {
         *cb.borrow_mut() = callback;

@@ -3,23 +3,14 @@ use objc2::{class, msg_send};
 
 pub fn share_text(text: &str, _subject: Option<&str>) -> Result<(), String> {
     unsafe {
-        // NSString *shareText = @"...";
-        let ns_text: *mut AnyObject = msg_send![
-            class!(NSString),
-            stringWithUTF8String: text.as_ptr() as *const std::ffi::c_char
-        ];
+        // SAFETY: `nsstring` builds the NSString via
+        // `initWithBytes:length:encoding:`, so it's safe for `text` (a Rust
+        // `&str`) which is not NUL-terminated — unlike
+        // `stringWithUTF8String:`, which reads until a NUL byte and would
+        // read out of bounds for arbitrary `&str` input.
+        let ns_text = crate::ios::util::nsstring(text);
         if ns_text.is_null() {
-            // Fallback: use alloc + initWithBytes for non-null-terminated strings
-            let ns_text: *mut AnyObject = msg_send![class!(NSString), alloc];
-            let ns_text: *mut AnyObject = msg_send![ns_text,
-                initWithBytes: text.as_ptr() as *const std::ffi::c_void,
-                length: text.len(),
-                encoding: 4u64  // NSUTF8StringEncoding
-            ];
-            if ns_text.is_null() {
-                return Err("Failed to create NSString".into());
-            }
-            return present_share_sheet(ns_text);
+            return Err("Failed to create NSString".into());
         }
         present_share_sheet(ns_text)
     }

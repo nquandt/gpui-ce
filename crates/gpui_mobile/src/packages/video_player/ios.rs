@@ -227,8 +227,11 @@ struct CMTime {
 }
 
 unsafe impl Encode for CMTime {
+    // `CMTime` is a typedef of an anonymous struct, so its Objective-C type
+    // encoding is `{?=qiIq}`; naming it "CMTime" here makes objc2's debug
+    // encoding verification abort the process on every `currentTime` call.
     const ENCODING: Encoding = Encoding::Struct(
-        "CMTime",
+        "?",
         &[
             Encoding::LongLong,
             Encoding::Int,
@@ -288,7 +291,7 @@ fn cmtime_to_ms(time: CMTime) -> u64 {
 }
 
 unsafe fn make_nsstring(s: &str) -> *mut AnyObject {
-    crate::ios::util::nsstring(s)
+    unsafe { crate::ios::util::nsstring(s) }
 }
 
 /// Wait (up to 5 seconds) for the current AVPlayerItem to reach ReadyToPlay status.
