@@ -98,6 +98,8 @@ gpui = { path = "../gpui/", version = "0.2.2", package = "gpui-ce", default-feat
 [target.'cfg(target_os = "ios")'.dependencies]
 # Objective-C runtime
 objc2 = "0.6"
+# HTTP types for the NSURLSession-backed `HttpClient`
+http.workspace = true
 
 # Apple frameworks
 core-foundation.workspace = true

@@ -14,4 +14,3 @@ gpui_mobile = { path = "../../crates/gpui_mobile/", default-features = false, fe
   "video_player",
   "camera",
 ] }
-log.workspace = true

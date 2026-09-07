@@ -192,6 +192,7 @@ pub fn set_on_submit(callback: Option<SubmitCallback>) {
 /// Dispatch a text change to the registered callback.
 ///
 /// Called internally by the platform layer's control-event target.
+#[cfg_attr(not(any(target_os = "ios", target_os = "android")), allow(dead_code))]
 pub(crate) fn dispatch_text_changed(text: &str) {
     TEXT_CHANGED_CALLBACK.with(|cb| {
         if let Some(callback) = cb.borrow_mut().as_mut() {
@@ -204,6 +205,7 @@ pub(crate) fn dispatch_text_changed(text: &str) {
 /// Dispatch the submit action to the registered callback.
 ///
 /// Called internally by the platform layer's control-event target.
+#[cfg_attr(not(any(target_os = "ios", target_os = "android")), allow(dead_code))]
 pub(crate) fn dispatch_submit() {
     SUBMIT_CALLBACK.with(|cb| {
         if let Some(callback) = cb.borrow_mut().as_mut() {

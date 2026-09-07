@@ -3229,6 +3229,7 @@ dependencies = [
  "futures",
  "gpui-ce",
  "gpui_ce_wgpu",
+ "http",
  "jni 0.22.4",
  "libc",
  "log",
@@ -3729,6 +3730,15 @@ version = "0.1.0"
 dependencies = [
  "gpui-ce",
  "gpui_mobile",
+]
+
+[[package]]
+name = "ios_gallery"
+version = "0.1.0"
+dependencies = [
+ "gpui-ce",
+ "gpui_ce_elements",
+ "gpui_mobile",
  "log",
 ]
 
@@ -3739,7 +3749,6 @@ dependencies = [
  "gpui-ce",
  "gpui_ce_elements",
  "gpui_mobile",
- "log",
 ]
 
 [[package]]
