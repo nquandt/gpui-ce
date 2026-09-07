@@ -73,6 +73,7 @@ pub fn set_on_url_changed(callback: Option<UrlChangedCallback>) {
 /// Dispatch a URL change to the registered callback.
 ///
 /// Called internally by the platform layer's navigation delegate.
+#[cfg_attr(not(any(target_os = "ios", target_os = "android")), allow(dead_code))]
 pub(crate) fn dispatch_url_changed(url: &str) {
     URL_CHANGED_CALLBACK.with(|cb| {
         if let Some(callback) = cb.borrow_mut().as_mut() {

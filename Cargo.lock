@@ -3229,6 +3229,7 @@ dependencies = [
  "futures",
  "gpui-ce",
  "gpui_ce_wgpu",
+ "http",
  "jni 0.22.4",
  "libc",
  "log",
@@ -3729,7 +3730,6 @@ version = "0.1.0"
 dependencies = [
  "gpui-ce",
  "gpui_mobile",
- "log",
 ]
 
 [[package]]
@@ -3740,8 +3740,6 @@ dependencies = [
  "gpui_ce_elements",
  "gpui_mobile",
  "log",
- "serde",
- "serde_json",
 ]
 
 [[package]]
@@ -3751,7 +3749,6 @@ dependencies = [
  "gpui-ce",
  "gpui_ce_elements",
  "gpui_mobile",
- "log",
 ]
 
 [[package]]
