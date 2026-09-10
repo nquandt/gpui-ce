@@ -51,6 +51,7 @@ pub(crate) struct WebWindowInner {
     pub(crate) browser_window: web_sys::Window,
     pub(crate) canvas: web_sys::HtmlCanvasElement,
     pub(crate) ime_mirror: ImeMirror,
+    pub(crate) a11y: Option<crate::a11y::A11yMirror>,
     pub(crate) has_device_pixel_support: bool,
     pub(crate) is_mac: bool,
     pub(crate) state: RefCell<WebWindowMutableState>,
@@ -193,6 +194,7 @@ impl WebWindow {
 
         let inner = Rc::new(WebWindowInner {
             browser_window,
+            a11y: crate::a11y::A11yMirror::new(&document, &canvas),
             canvas,
             ime_mirror,
             has_device_pixel_support,
@@ -730,6 +732,19 @@ impl PlatformWindow for WebWindow {
         self.inner.state.borrow_mut().title = title.to_owned();
         if let Some(document) = self.inner.browser_window.document() {
             document.set_title(title);
+        }
+    }
+
+    fn a11y_init(&self, callbacks: gpui::A11yCallbacks) {
+        if let Some(mirror) = &self.inner.a11y {
+            mirror.init(callbacks);
+        }
+    }
+
+    fn a11y_tree_update(&self, tree_update: accesskit::TreeUpdate) {
+        if let Some(mirror) = &self.inner.a11y {
+            let scale = self.inner.state.borrow().scale_factor as f64;
+            mirror.apply(tree_update, scale);
         }
     }
 

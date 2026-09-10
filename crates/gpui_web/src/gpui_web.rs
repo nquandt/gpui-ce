@@ -5,6 +5,7 @@
 //! force either backend with [`WebBackendPreference`]. Opening a second top-level window, or
 //! reopening one after it closes, returns [`WebWindowError`].
 
+mod a11y;
 mod dispatcher;
 mod display;
 mod events;
