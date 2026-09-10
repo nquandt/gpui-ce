@@ -54,6 +54,13 @@ impl UreqHttpClient {
             *headers = request.headers;
         }
         let http_request = builder.body(request.body).context("invalid HTTP request")?;
+        let http_request = match request.timeout {
+            Some(timeout) => agent
+                .configure_request(http_request)
+                .timeout_global(Some(timeout))
+                .build(),
+            None => http_request,
+        };
 
         let response = agent
             .run(http_request)
@@ -109,6 +116,22 @@ mod tests {
         assert!(response.is_success(), "status {}", response.status);
         assert!(response.header("content-type").is_some());
         assert!(response.text().contains("Example Domain"));
+    }
+
+    #[test]
+    #[ignore]
+    fn timeout_is_enforced() {
+        let client = UreqHttpClient::new();
+        // 10.255.255.1 is unroutable, so the connect phase hangs until the timeout.
+        let error = block_on(client.send(
+            HttpRequest::get("http://10.255.255.1/").timeout(std::time::Duration::from_millis(300)),
+        ))
+        .unwrap_err();
+        let text = format!("{error:#}").to_lowercase();
+        assert!(
+            text.contains("timeout") || text.contains("timed out"),
+            "{text}"
+        );
     }
 
     #[test]

@@ -90,6 +90,13 @@ async fn perform(request: HttpRequest) -> anyhow::Result<HttpResponse> {
         init.set_body(&body);
     }
 
+    // Timeouts: abort the fetch from a setTimeout. The guard clears the timer
+    // (and keeps the closure alive) until the response body has been read.
+    let _timeout_guard = match request.timeout {
+        Some(timeout) => Some(TimeoutGuard::arm(&init, timeout)?),
+        None => None,
+    };
+
     let web_request = web_sys::Request::new_with_str_and_init(&request.url, &init)
         .map_err(|error| anyhow!("failed to create fetch Request: {error:?}"))?;
 
@@ -124,6 +131,41 @@ async fn perform(request: HttpRequest) -> anyhow::Result<HttpResponse> {
         headers: response_headers,
         body,
     })
+}
+
+/// Aborts a fetch after a delay. Dropping the guard cancels the timer.
+struct TimeoutGuard {
+    handle: i32,
+    _closure: Closure<dyn FnMut()>,
+}
+
+impl TimeoutGuard {
+    fn arm(init: &web_sys::RequestInit, timeout: std::time::Duration) -> anyhow::Result<Self> {
+        let controller = web_sys::AbortController::new()
+            .map_err(|error| anyhow!("failed to create AbortController: {error:?}"))?;
+        init.set_signal(Some(&controller.signal()));
+        let closure = Closure::once(move || controller.abort());
+        let millis = i32::try_from(timeout.as_millis()).unwrap_or(i32::MAX);
+        let handle = js_sys::global()
+            .unchecked_into::<web_sys::WorkerGlobalScope>()
+            .set_timeout_with_callback_and_timeout_and_arguments_0(
+                closure.as_ref().unchecked_ref(),
+                millis,
+            )
+            .map_err(|error| anyhow!("setTimeout failed: {error:?}"))?;
+        Ok(Self {
+            handle,
+            _closure: closure,
+        })
+    }
+}
+
+impl Drop for TimeoutGuard {
+    fn drop(&mut self) {
+        js_sys::global()
+            .unchecked_into::<web_sys::WorkerGlobalScope>()
+            .clear_timeout_with_handle(self.handle);
+    }
 }
 
 /// Copy the entries of a `Headers` object into an `http::HeaderMap`.
