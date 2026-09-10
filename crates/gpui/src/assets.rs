@@ -28,6 +28,55 @@ impl AssetSource for () {
     }
 }
 
+/// Read the bytes behind a file-system style path used by `img(PathBuf)` and
+/// `svg().external_path(..)`.
+///
+/// On native targets this is `std::fs::read`. On wasm there is no file
+/// system, so the path is first looked up in the app's [`AssetSource`] and,
+/// if absent there, fetched as a URL relative to the page (so `assets/x.png`
+/// resolves the way it would from a `<img src>`). Either way the caller sees
+/// an `io::Error` on failure, which keeps the loaders' error types unchanged.
+pub(crate) fn read_path_bytes(
+    path: String,
+    asset_source: std::sync::Arc<dyn AssetSource>,
+    http_client: std::sync::Arc<dyn crate::http_client::HttpClient>,
+) -> impl std::future::Future<Output = std::io::Result<Vec<u8>>> + Send + 'static {
+    async move {
+        #[cfg(not(target_family = "wasm"))]
+        {
+            let _ = (asset_source, http_client);
+            std::fs::read(&path)
+        }
+
+        #[cfg(target_family = "wasm")]
+        {
+            use std::io::{Error, ErrorKind};
+
+            let embedded = asset_source
+                .load(&path)
+                .map_err(|error| Error::new(ErrorKind::Other, error.to_string()))?;
+            if let Some(bytes) = embedded {
+                return Ok(bytes.into_owned());
+            }
+
+            let response = http_client
+                .get(&path, true)
+                .await
+                .map_err(|error| Error::new(ErrorKind::Other, error.to_string()))?;
+            if response.status.is_success() {
+                Ok(response.body)
+            } else if response.status == http::StatusCode::NOT_FOUND {
+                Err(Error::new(ErrorKind::NotFound, format!("{path}: 404")))
+            } else {
+                Err(Error::new(
+                    ErrorKind::Other,
+                    format!("{path}: HTTP {}", response.status),
+                ))
+            }
+        }
+    }
+}
+
 /// A unique identifier for the image cache
 #[derive(Copy, Clone, Debug, Eq, PartialEq, Ord, PartialOrd, Hash)]
 pub struct ImageId(pub usize);

@@ -16,7 +16,6 @@ use image::{
 use scheduler::Instant;
 use smallvec::SmallVec;
 use std::{
-    fs,
     io::{self, Cursor},
     ops::{Deref, DerefMut},
     path::{Path, PathBuf},
@@ -631,7 +630,14 @@ impl Asset for ImageAssetLoader {
         let asset_source = cx.asset_source().clone();
         async move {
             let bytes = match source.clone() {
-                Resource::Path(uri) => fs::read(uri.as_ref())?,
+                Resource::Path(path) => {
+                    crate::assets::read_path_bytes(
+                        path.to_string_lossy().into_owned(),
+                        asset_source.clone(),
+                        client.clone(),
+                    )
+                    .await?
+                }
                 Resource::Uri(uri) => {
                     use anyhow::Context as _;
 

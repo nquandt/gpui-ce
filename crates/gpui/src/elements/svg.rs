@@ -1,7 +1,5 @@
 use std::{
-    fs,
     hash::{Hash, Hasher},
-    path::Path,
     sync::Arc,
 };
 
@@ -292,10 +290,15 @@ impl Asset for SvgAsset {
 
     fn load(
         source: Self::Source,
-        _cx: &mut App,
+        cx: &mut App,
     ) -> impl Future<Output = Self::Output> + Send + 'static {
+        let asset_source = cx.asset_source().clone();
+        let http_client = cx.http_client();
         async move {
-            let bytes = fs::read(Path::new(source.as_ref())).map_err(|e| Arc::new(e))?;
+            let bytes =
+                crate::assets::read_path_bytes(source.to_string(), asset_source, http_client)
+                    .await
+                    .map_err(Arc::new)?;
             let bytes = Arc::from(bytes);
             Ok(bytes)
         }
