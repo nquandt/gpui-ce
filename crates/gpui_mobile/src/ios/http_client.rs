@@ -9,41 +9,43 @@
 //!
 //! Requests go through `NSURLSession.sharedSession`, so App Transport
 //! Security, system proxies and the device's certificate store all apply.
-//! Redirects are always followed (the session default); the
-//! `follow_redirects` flag is accepted but not enforced.
+//! Method, headers and body are forwarded; response headers are read back
+//! from `NSHTTPURLResponse.allHeaderFields`. Redirects are always followed
+//! (the session default); the `follow_redirects` flag is accepted but not
+//! enforced.
 
 use anyhow::{Result, anyhow};
 use futures::channel::oneshot;
 use futures::future::BoxFuture;
-use gpui::http_client::{HttpClient, HttpResponse};
+use gpui::http_client::{HttpClient, HttpRequest, HttpResponse};
 use objc2::runtime::{AnyObject, Bool};
 use objc2::{class, msg_send};
 use parking_lot::Mutex;
 use std::ffi::c_void;
 use std::sync::Arc;
 
-/// HTTP client that performs GET requests with `NSURLSession`.
+/// HTTP client that performs requests with `NSURLSession`.
 #[derive(Debug, Default, Clone, Copy)]
 pub struct IosHttpClient;
 
 type ResponseSender = oneshot::Sender<Result<HttpResponse>>;
 
 impl HttpClient for IosHttpClient {
-    fn get(&self, url: &str, _follow_redirects: bool) -> BoxFuture<'static, Result<HttpResponse>> {
-        let url = url.to_string();
+    fn send(&self, request: HttpRequest) -> BoxFuture<'static, Result<HttpResponse>> {
         Box::pin(async move {
             let (tx, rx) = oneshot::channel();
             // SAFETY: NSURLSession is thread-safe; the completion block only
             // touches its own captures and Foundation objects handed to it.
-            unsafe { start_request(&url, tx)? };
+            unsafe { start_request(&request, tx)? };
             rx.await
                 .map_err(|_| anyhow!("NSURLSession completion handler was dropped"))?
         })
     }
 }
 
-unsafe fn start_request(url: &str, sender: ResponseSender) -> Result<()> {
+unsafe fn start_request(request_spec: &HttpRequest, sender: ResponseSender) -> Result<()> {
     unsafe {
+        let url = request_spec.url.as_str();
         let url_string = super::util::nsstring(url);
         let ns_url: *mut AnyObject = msg_send![class!(NSURL), URLWithString: url_string];
         if ns_url.is_null() {
@@ -55,9 +57,27 @@ unsafe fn start_request(url: &str, sender: ResponseSender) -> Result<()> {
         if request.is_null() {
             return Err(anyhow!("could not create NSMutableURLRequest for {url}"));
         }
+        let method = super::util::nsstring(request_spec.method.as_str());
+        let _: () = msg_send![request, setHTTPMethod: method];
+
         let user_agent = super::util::nsstring(concat!("gpui_mobile/", env!("CARGO_PKG_VERSION")));
         let header = super::util::nsstring("User-Agent");
         let _: () = msg_send![request, setValue: user_agent, forHTTPHeaderField: header];
+        for (name, value) in &request_spec.headers {
+            let Ok(value) = value.to_str() else { continue };
+            let name = super::util::nsstring(name.as_str());
+            let value = super::util::nsstring(value);
+            let _: () = msg_send![request, addValue: value, forHTTPHeaderField: name];
+        }
+
+        if !request_spec.body.is_empty() {
+            let data: *mut AnyObject = msg_send![
+                class!(NSData),
+                dataWithBytes: request_spec.body.as_ptr() as *const c_void,
+                length: request_spec.body.len()
+            ];
+            let _: () = msg_send![request, setHTTPBody: data];
+        }
 
         let session: *mut AnyObject = msg_send![class!(NSURLSession), sharedSession];
         if session.is_null() {
@@ -107,11 +127,13 @@ unsafe fn completion_result(
         }
 
         let mut status = 200_u16;
+        let mut headers = http::HeaderMap::new();
         if !response.is_null() {
             let is_http: Bool = msg_send![response, isKindOfClass: class!(NSHTTPURLResponse)];
             if is_http.as_bool() {
                 let code: isize = msg_send![response, statusCode];
                 status = u16::try_from(code).unwrap_or(0);
+                headers = collect_headers(response);
             }
         }
         let status = http::StatusCode::from_u16(status)
@@ -126,8 +148,41 @@ unsafe fn completion_result(
             }
         }
 
-        Ok(HttpResponse { status, body })
+        Ok(HttpResponse {
+            status,
+            headers,
+            body,
+        })
     }
+}
+
+/// Read `allHeaderFields` from an `NSHTTPURLResponse` into a `HeaderMap`.
+/// Entries the `http` crate rejects are skipped.
+unsafe fn collect_headers(response: *mut AnyObject) -> http::HeaderMap {
+    let mut map = http::HeaderMap::new();
+    unsafe {
+        let fields: *mut AnyObject = msg_send![response, allHeaderFields];
+        if fields.is_null() {
+            return map;
+        }
+        let keys: *mut AnyObject = msg_send![fields, allKeys];
+        let count: usize = msg_send![keys, count];
+        for index in 0..count {
+            let key: *mut AnyObject = msg_send![keys, objectAtIndex: index];
+            let value: *mut AnyObject = msg_send![fields, objectForKey: key];
+            let (Some(name), Some(value)) = (nsstring_to_string(key), nsstring_to_string(value))
+            else {
+                continue;
+            };
+            if let (Ok(name), Ok(value)) = (
+                http::HeaderName::try_from(name.as_str()),
+                http::HeaderValue::try_from(value.as_str()),
+            ) {
+                map.append(name, value);
+            }
+        }
+    }
+    map
 }
 
 unsafe fn nsstring_to_string(string: *mut AnyObject) -> Option<String> {
