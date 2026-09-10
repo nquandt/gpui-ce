@@ -1,0 +1,10 @@
+[package]
+name = "app-web"
+version.workspace = true
+edition.workspace = true
+publish.workspace = true
+
+[dependencies]
+app-core = { path = "../core" }
+gpui.workspace = true
+gpui_platform.workspace = true

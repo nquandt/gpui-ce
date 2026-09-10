@@ -80,6 +80,9 @@ check-wasm-atomics:
     print "🕸️ Checking hello_web example (nightly, uses its own .cargo/config.toml)..."
     cd crates/gpui_web/examples/hello_web
     cargo +nightly check --target wasm32-unknown-unknown
+    print "🕸️ Checking shared_core web host (nightly)..."
+    cd ../../../../examples/shared_core/web
+    cargo +nightly check --target wasm32-unknown-unknown
 
 [doc('Check examples + WASM web package — requires wasm32-unknown-unknown target to be installed')]
 [group('build')]
@@ -87,6 +90,7 @@ check-examples:
     @echo "📐 Checking examples..."
     cargo build --package gpui-ce --examples
     cargo check --package gpui_ce_web --target wasm32-unknown-unknown
+    cargo check --manifest-path examples/shared_core/Cargo.toml -p app-desktop
 
 
 [doc('Run all workspace unit and integration tests')]

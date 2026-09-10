@@ -1,0 +1,11 @@
+[package]
+name = "app-desktop"
+version.workspace = true
+edition.workspace = true
+publish.workspace = true
+
+[dependencies]
+app-core = { path = "../core" }
+gpui.workspace = true
+gpui_platform.workspace = true
+env_logger = "0.11"
