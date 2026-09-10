@@ -24,6 +24,7 @@ use parking_lot::RwLock;
 use slotmap::SlotMap;
 
 use crate::http_client::{HttpClient, NullHttpClient};
+use crate::key_value_store::{KeyValueStore, MemoryKeyValueStore};
 pub use async_context::*;
 #[cfg(feature = "bench-support")]
 pub use bench_context::{BenchAppContext, BenchReport, BenchWindowContext, bench_platform};
@@ -220,6 +221,14 @@ impl Application {
     pub fn with_http_client(self, http_client: Arc<dyn HttpClient>) -> Self {
         let mut context_lock = self.0.borrow_mut();
         context_lock.http_client = http_client;
+        drop(context_lock);
+        self
+    }
+
+    /// Sets the persistent key-value store for the application.
+    pub fn with_key_value_store(self, store: Arc<dyn KeyValueStore>) -> Self {
+        let mut context_lock = self.0.borrow_mut();
+        context_lock.key_value_store = store;
         drop(context_lock);
         self
     }
@@ -762,6 +771,7 @@ pub struct App {
     asset_source: Arc<dyn AssetSource>,
     pub(crate) svg_renderer: SvgRenderer,
     http_client: Arc<dyn HttpClient>,
+    key_value_store: Arc<dyn KeyValueStore>,
 
     // below is plain data, the drop order is insignificant here
     pub(crate) pending_notifications: FxHashSet<EntityId>,
@@ -848,6 +858,7 @@ impl App {
                 loading_assets: Default::default(),
                 asset_source,
                 http_client,
+                key_value_store: Arc::new(MemoryKeyValueStore::new()),
                 globals_by_type: Default::default(),
                 global_entities: Default::default(),
                 entities,
@@ -1697,6 +1708,19 @@ impl App {
     /// Sets the HTTP client for the application.
     pub fn set_http_client(&mut self, new_client: Arc<dyn HttpClient>) {
         self.http_client = new_client;
+    }
+
+    /// Returns the persistent key-value store for the application.
+    ///
+    /// Platform backends install a store that persists across launches. The
+    /// default is an in-memory store that forgets everything on exit.
+    pub fn key_value_store(&self) -> Arc<dyn KeyValueStore> {
+        self.key_value_store.clone()
+    }
+
+    /// Sets the persistent key-value store for the application.
+    pub fn set_key_value_store(&mut self, store: Arc<dyn KeyValueStore>) {
+        self.key_value_store = store;
     }
 
     /// Configures when the application should automatically quit.
