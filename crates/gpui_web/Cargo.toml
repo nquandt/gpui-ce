@@ -33,9 +33,14 @@ web-time.workspace = true
 console_error_panic_hook.workspace = true
 js-sys.workspace = true
 raw-window-handle.workspace = true
-# The crates.io release contains the current wasm-bindgen-compatible worker
-# bootstrap, so consumers do not need a Git dependency.
-wasm_thread = { version = "0.3.3", features = ["es_modules"], optional = true }
+# Must match the `wasm_thread` source used by `gpui_ce_scheduler`. Two copies of
+# the crate produce duplicate `wasm_thread_entry_point` symbols at link time.
+# The crates.io 0.3.3 release still calls the wasm-bindgen init function with
+# positional arguments, which wasm-bindgen 0.2.93+ no longer accepts, so the
+# zed-industries fork is required.
+wasm_thread = { git = "https://github.com/zed-industries/wasm_thread", rev = "0cf96c7708dfb97ccf3da50347e25edcf75d6937", version = "0.3", features = [
+  "es_modules",
+], optional = true }
 web-sys = { version = "0.3", features = [
   "console",
   "Blob",

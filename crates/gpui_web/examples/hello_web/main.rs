@@ -430,7 +430,10 @@ fn requested_backend() -> gpui_platform::WebBackendPreference {
 
 fn main() {
     gpui_platform::web_init();
-    gpui_platform::application_with_web_backend(requested_backend()).run(|cx: &mut App| {
+    // The browser owns the event loop, so `Platform::run` returns immediately.
+    // `run_embedded` returns a handle that keeps the app alive; leak it so the
+    // app lives for the lifetime of the page.
+    let handle = gpui_platform::application_with_web_backend(requested_backend()).run_embedded(|cx: &mut App| {
         if let Err(error) = cx
             .text_system()
             .add_fonts(vec![Cow::Borrowed(include_bytes!(
@@ -453,4 +456,5 @@ fn main() {
         .expect("failed to open window");
         cx.activate(true);
     });
+    std::mem::forget(handle);
 }
