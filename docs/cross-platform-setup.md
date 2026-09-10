@@ -593,7 +593,7 @@ GPUI exposes on every backend; each host installs the implementation that fits.
 
 | Service | Desktop | Web | iOS |
 |---------|---------|-----|-----|
-| `cx.http_client()` (`HttpClient`, `HttpRequest`) | `NullHttpClient` by default; install your own | `fetch` | `NSURLSession` |
+| `cx.http_client()` (`HttpClient`, `HttpRequest`) | `ureq` with rustls (`UreqHttpClient`) | `fetch` | `NSURLSession` |
 | `cx.key_value_store()` (`KeyValueStore`) | JSON file in the user's data dir | `localStorage` | `NSUserDefaults` |
 | `AssetSource` (`Application::with_assets`) | your `include_bytes!` source | same | same |
 

@@ -3,6 +3,11 @@
 
 pub use gpui::Platform;
 
+#[cfg(all(not(target_family = "wasm"), feature = "http"))]
+mod http_client;
+#[cfg(all(not(target_family = "wasm"), feature = "http"))]
+pub use http_client::UreqHttpClient;
+
 use std::rc::Rc;
 
 /// Returns a background executor for the current platform.
@@ -17,8 +22,13 @@ pub fn application() -> gpui::Application {
     }
 
     #[cfg(not(target_family = "wasm"))]
-    gpui::Application::with_platform(current_platform(false))
-        .with_key_value_store(std::sync::Arc::new(default_key_value_store()))
+    {
+        let app = gpui::Application::with_platform(current_platform(false))
+            .with_key_value_store(std::sync::Arc::new(default_key_value_store()));
+        #[cfg(feature = "http")]
+        let app = app.with_http_client(std::sync::Arc::new(UreqHttpClient::new()));
+        app
+    }
 }
 
 /// The file-backed key-value store used by [`application`] on desktop.

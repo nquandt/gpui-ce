@@ -13,7 +13,9 @@ workspace = true
 path = "src/gpui_platform.rs"
 
 [features]
-default = ["web-multithreaded"]
+default = ["web-multithreaded", "http"]
+# Desktop HTTP client (ureq + rustls), installed by `application()`.
+http = ["dep:ureq", "dep:futures"]
 # Web workers + SharedArrayBuffer on wasm32. Needs nightly (build-std with
 # atomics). Disable to check the web backend on stable.
 web-multithreaded = ["gpui_web/multithreaded"]
@@ -37,6 +39,12 @@ wgpu = ["gpui_windows/wgpu"]
 
 [dependencies]
 gpui.workspace = true
+anyhow.workspace = true
+http.workspace = true
+
+[target.'cfg(not(target_family = "wasm"))'.dependencies]
+ureq = { workspace = true, optional = true }
+futures = { workspace = true, optional = true }
 
 [target.'cfg(target_os = "macos")'.dependencies]
 gpui_macos.workspace = true
