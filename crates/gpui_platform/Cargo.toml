@@ -13,7 +13,10 @@ workspace = true
 path = "src/gpui_platform.rs"
 
 [features]
-default = []
+default = ["web-multithreaded"]
+# Web workers + SharedArrayBuffer on wasm32. Needs nightly (build-std with
+# atomics). Disable to check the web backend on stable.
+web-multithreaded = ["gpui_web/multithreaded"]
 bench-support = ["gpui/bench-support", "gpui_macos/bench-support"]
 font-kit = ["gpui_macos/font-kit"]
 test-support = [
