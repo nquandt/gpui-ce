@@ -16,6 +16,8 @@ The core demonstrates the three services a real app needs on every target:
 - **Persistence** through `cx.key_value_store()` (a JSON file on desktop,
   `localStorage` on the web).
 - **Assets** through an `AssetSource` that embeds the font and an SVG.
+- **File picking** through `cx.file_picker()`, which returns bytes so the
+  browser's `<input type=file>` and native dialogs look the same to the core.
 
 ## Desktop
 

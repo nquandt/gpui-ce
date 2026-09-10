@@ -8,6 +8,7 @@
 mod dispatcher;
 mod display;
 mod events;
+mod file_picker;
 mod http_client;
 mod ime_mirror;
 mod key_value_store;
@@ -18,6 +19,7 @@ mod window;
 
 pub use dispatcher::WebDispatcher;
 pub use display::WebDisplay;
+pub use file_picker::DomFilePicker;
 pub use gpui_wgpu::WebBackendPreference;
 pub use http_client::FetchHttpClient;
 pub use key_value_store::LocalStorageKeyValueStore;

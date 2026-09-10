@@ -23,6 +23,7 @@ use itertools::Itertools;
 use parking_lot::RwLock;
 use slotmap::SlotMap;
 
+use crate::file_picker::{FilePicker, PlatformFilePicker};
 use crate::http_client::{HttpClient, NullHttpClient};
 use crate::key_value_store::{KeyValueStore, MemoryKeyValueStore};
 pub use async_context::*;
@@ -229,6 +230,14 @@ impl Application {
     pub fn with_key_value_store(self, store: Arc<dyn KeyValueStore>) -> Self {
         let mut context_lock = self.0.borrow_mut();
         context_lock.key_value_store = store;
+        drop(context_lock);
+        self
+    }
+
+    /// Sets the file picker for the application.
+    pub fn with_file_picker(self, picker: Rc<dyn FilePicker>) -> Self {
+        let mut context_lock = self.0.borrow_mut();
+        context_lock.file_picker = picker;
         drop(context_lock);
         self
     }
@@ -772,6 +781,7 @@ pub struct App {
     pub(crate) svg_renderer: SvgRenderer,
     http_client: Arc<dyn HttpClient>,
     key_value_store: Arc<dyn KeyValueStore>,
+    file_picker: Rc<dyn FilePicker>,
 
     // below is plain data, the drop order is insignificant here
     pub(crate) pending_notifications: FxHashSet<EntityId>,
@@ -859,6 +869,7 @@ impl App {
                 asset_source,
                 http_client,
                 key_value_store: Arc::new(MemoryKeyValueStore::new()),
+                file_picker: Rc::new(PlatformFilePicker::new(platform.clone())),
                 globals_by_type: Default::default(),
                 global_entities: Default::default(),
                 entities,
@@ -1721,6 +1732,19 @@ impl App {
     /// Sets the persistent key-value store for the application.
     pub fn set_key_value_store(&mut self, store: Arc<dyn KeyValueStore>) {
         self.key_value_store = store;
+    }
+
+    /// Returns the file picker for the application.
+    ///
+    /// The default shows the platform's path dialog and reads the chosen
+    /// files; the web backend installs a browser picker instead.
+    pub fn file_picker(&self) -> Rc<dyn FilePicker> {
+        self.file_picker.clone()
+    }
+
+    /// Sets the file picker for the application.
+    pub fn set_file_picker(&mut self, picker: Rc<dyn FilePicker>) {
+        self.file_picker = picker;
     }
 
     /// Configures when the application should automatically quit.
