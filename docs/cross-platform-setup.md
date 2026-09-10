@@ -1,24 +1,26 @@
 # Cross-Platform GPUI-CE Setup Guide
 
-Build Rust GUI apps that run on **Windows**, **macOS**, **Linux**, **iOS**, and **Android** from a single codebase using [gpui-ce](https://github.com/gpui-ce/gpui-ce) and [gpui-mobile](https://github.com/itsbalamurali/gpui-mobile).
+Build Rust GUI apps that run on **Windows**, **macOS**, **Linux**, **Web (wasm)**, **iOS**, and **Android** from a single codebase using [gpui-ce](https://github.com/gpui-ce/gpui-ce) and [gpui-mobile](https://github.com/itsbalamurali/gpui-mobile).
 
 ## Overview
 
-GPUI-CE is a community fork of Zed's GPU-accelerated UI framework. It supports desktop platforms natively (via `gpui_platform`) and mobile platforms via `gpui_mobile` (iOS via Metal/wgpu, Android via Vulkan/wgpu).
+GPUI-CE is a community fork of Zed's GPU-accelerated UI framework. It supports desktop platforms natively (via `gpui_platform`), the browser via `gpui_web` (wasm32, WebGPU with a WebGL2 fallback, also selected by `gpui_platform`), and mobile platforms via `gpui_mobile` (iOS via Metal/wgpu, Android via Vulkan/wgpu).
 
 Your application has three layers:
 
 ```
-┌─────────────────────────────────────────────────┐
-│  Shared UI Code (Render trait, components)      │  ← platform-agnostic
-├────────────────┬───────────────┬────────────────┤
-│  gpui_platform │  gpui_mobile  │  gpui_mobile   │  ← platform entry points
-│  (desktop)     │  (iOS)        │  (Android)     │
-├────────────────┼───────────────┼────────────────┤
-│  Win/macOS/    │  UIKit +      │  NDK +         │  ← OS specifics
-│  Linux/Wayland │  Metal        │  Vulkan        │
-└────────────────┴───────────────┴────────────────┘
+┌──────────────────────────────────────────────────────────────────┐
+│  Shared UI Code (Render trait, components, state, assets)        │  ← platform-agnostic
+├────────────────┬────────────────┬───────────────┬────────────────┤
+│  gpui_platform │  gpui_platform │  gpui_mobile  │  gpui_mobile   │  ← platform entry points
+│  (desktop)     │  (web)         │  (iOS)        │  (Android)     │
+├────────────────┼────────────────┼───────────────┼────────────────┤
+│  Win/macOS/    │  canvas +      │  UIKit +      │  NDK +         │  ← OS specifics
+│  Linux/Wayland │  WebGPU/WebGL2 │  Metal        │  Vulkan        │
+└────────────────┴────────────────┴───────────────┴────────────────┘
 ```
+
+The shared code reaches the host only through GPUI services that every backend provides: `cx.http_client()`, `cx.key_value_store()` and the `AssetSource`. See [Platform Services](#platform-services).
 
 ## Prerequisites
 
@@ -39,6 +41,15 @@ Your application has three layers:
 # Linux (Ubuntu/Debian)
 sudo apt install build-essential pkg-config libfontconfig-dev \
   libwayland-dev libxkbcommon-dev libvulkan-dev
+```
+
+### Web
+
+- **Nightly** toolchain with `rust-src` (the web backend uses wasm threads, which need `-Zbuild-std`)
+- **trunk**: `cargo install trunk --locked`
+
+```bash
+rustup toolchain install nightly --component rust-src --target wasm32-unknown-unknown
 ```
 
 ### iOS
@@ -86,6 +97,15 @@ my-gpui-app/
 │   │   └── src/
 │   │       └── main.rs
 │   │
+│   ├── app-web/                        # browser binary (wasm32)
+│   │   ├── Cargo.toml
+│   │   ├── index.html                  # trunk entry point
+│   │   ├── trunk.toml                  # COOP/COEP headers for wasm threads
+│   │   ├── rust-toolchain.toml         # nightly
+│   │   ├── .cargo/config.toml          # wasm atomics flags + build-std
+│   │   └── src/
+│   │       └── main.rs
+│   │
 │   ├── app-ios/                        # iOS static library + binary
 │   │   ├── Cargo.toml
 │   │   ├── src/
@@ -116,6 +136,7 @@ my-gpui-app/
 members = [
     "crates/app-core",
     "crates/app-desktop",
+    "crates/app-web",
     "crates/app-ios",
     "crates/app-android",
 ]
@@ -291,7 +312,86 @@ the app exits.
 cargo run -p app-desktop
 ```
 
-## Step 4: iOS Entry Point
+## Step 4: Web Entry Point
+
+The browser owns the event loop, so the web platform's `run` returns
+immediately instead of blocking. Use `run_embedded`, which returns a handle
+that keeps the app alive, and leak the handle so the app lives as long as the
+page. A plain `run` drops the app as soon as the launch callback returns and
+you get a blank page with `app was released` in the console.
+
+```toml
+# crates/app-web/Cargo.toml
+[package]
+name = "app-web"
+version = "0.1.0"
+edition = "2024"
+
+[dependencies]
+app-core = { path = "../app-core/" }
+gpui = { workspace = true }
+gpui_platform = { workspace = true }
+```
+
+```rust
+// crates/app-web/src/main.rs
+use gpui::App;
+
+fn main() {
+    gpui_platform::web_init(); // panic hook + console logger
+    let handle = gpui_platform::application_with_web_backend(
+        gpui_platform::WebBackendPreference::Auto, // WebGPU, then WebGL2
+    )
+    .with_assets(app_core::Assets)
+    .run_embedded(|cx: &mut App| {
+        app_core::init(cx);
+        app_core::open_main_window(cx);
+    });
+    std::mem::forget(handle);
+}
+```
+
+`application_with_web_backend` also installs the `fetch` HTTP client and the
+`localStorage` key-value store, so `cx.http_client()` and
+`cx.key_value_store()` work without host code.
+
+Three build files live next to the crate. Copy them from
+`examples/shared_core/web/` in the gpui-ce repository:
+
+- `index.html` — the trunk entry; a full-screen `<canvas>` is created for you.
+- `trunk.toml` — sets the `Cross-Origin-Opener-Policy` and
+  `Cross-Origin-Embedder-Policy` headers. Without them `SharedArrayBuffer` is
+  unavailable and background work falls back to the main thread.
+- `.cargo/config.toml` and `rust-toolchain.toml` — wasm atomics flags,
+  `-Zbuild-std`, and the nightly channel. Keep them inside `app-web/` so the
+  desktop crates still build on stable.
+
+### Web constraints
+
+Know these before you commit to the canvas approach:
+
+- **Fonts start empty.** The web text system has no system fonts. Embed every
+  font with `include_bytes!` and register it with `cx.text_system().add_fonts`.
+- **One window.** Popups, dialogs and anchored windows return an error. Build
+  overlays as in-tree elements.
+- **No file dialogs, credentials store or native prompts.**
+- **File paths are URLs.** `img(PathBuf)` and `svg().external_path(..)` look
+  the path up in the `AssetSource` first, then fetch it relative to the page.
+- **No accessibility bridge.** Screen readers see an empty canvas.
+- **`background_spawn` futures must be `Send`.** Browser APIs are not; call
+  them from the foreground executor.
+
+### Running
+
+```bash
+cd crates/app-web
+trunk serve --release
+```
+
+Use `--release`. The debug build logs at DEBUG level and is slow enough to
+look frozen. Add `?backend=webgl` to the URL to force the WebGL2 path.
+
+## Step 5: iOS Entry Point
 
 ```toml
 # crates/app-ios/Cargo.toml
@@ -413,7 +513,7 @@ rustup target add aarch64-apple-ios-sim
 cargo build --target aarch64-apple-ios-sim -p app-ios
 ```
 
-## Step 5: Android Entry Point
+## Step 6: Android Entry Point
 
 ```toml
 # crates/app-android/Cargo.toml
@@ -486,6 +586,41 @@ adb install -r app/build/outputs/apk/debug/app-debug.apk
 adb shell am start -n com.example.myapp/android.app.NativeActivity
 ```
 
+## Platform Services
+
+The shared crate never calls a platform API directly. It uses services that
+GPUI exposes on every backend; each host installs the implementation that fits.
+
+| Service | Desktop | Web | iOS |
+|---------|---------|-----|-----|
+| `cx.http_client()` (`HttpClient`, `HttpRequest`) | `NullHttpClient` by default; install your own | `fetch` | `NSURLSession` |
+| `cx.key_value_store()` (`KeyValueStore`) | JSON file in the user's data dir | `localStorage` | `NSUserDefaults` |
+| `AssetSource` (`Application::with_assets`) | your `include_bytes!` source | same | same |
+
+```rust
+use gpui::http_client::HttpRequest;
+use gpui::key_value_store::KeyValueStoreExt as _;
+
+// HTTP: method, headers, body, JSON helpers
+let client = cx.http_client();
+cx.spawn(async move |this, cx| {
+    let response = client
+        .send(HttpRequest::post("https://example.com/api").json(&payload)?)
+        .await?
+        .error_for_status()?;
+    let value: MyReply = response.json()?;
+    // ...
+});
+
+// Persistence: strings, or JSON through the extension trait
+cx.key_value_store().set_json("settings", &settings)?;
+let settings: Option<Settings> = cx.key_value_store().get_json("settings")?;
+```
+
+Anything a host cannot provide should get the same treatment: a trait in the
+shared crate, a no-op or in-memory default, and one implementation per host
+installed from the entry point.
+
 ## Platform-Specific APIs
 
 When building for mobile, `gpui_mobile` provides APIs that are no-ops on desktop:
@@ -545,11 +680,34 @@ gpui_mobile::set_system_chrome(&gpui_mobile::SystemChromeStyle {
 | **Windows** | `cargo run -p app-desktop` |
 | **macOS** | `cargo run -p app-desktop` |
 | **Linux** | `cargo run -p app-desktop` |
+| **Web** | `cd crates/app-web && trunk serve --release` |
 | **iOS device** | `cargo build --target aarch64-apple-ios -p app-ios` |
 | **iOS simulator** | `cargo build --target aarch64-apple-ios-sim -p app-ios` |
 | **Android** | `cargo ndk -t arm64-v8a -o gradle/app/src/main/jniLibs build -p app-android` |
 
 ## Troubleshooting
+
+### Web: blank page, console says `app was released`
+
+The host used `Application::run`. On the web the platform's `run` returns at
+once and the app is dropped. Use `run_embedded` and keep the handle (see
+[Step 4](#step-4-web-entry-point)).
+
+### Web: duplicate symbol `wasm_thread_entry_point` at link time
+
+Two copies of `wasm_thread` are linked. `gpui_ce_web` and `gpui_ce_scheduler`
+must resolve to the same source; if a third crate pulls in the crates.io
+release, add a `[patch.crates-io]` entry pointing at the same fork and rev.
+
+### Web: text does not render
+
+No font is registered. Embed a font and call `cx.text_system().add_fonts`
+before opening the first window.
+
+### Web: page looks frozen in a debug build
+
+The debug build logs every wgpu and naga message at DEBUG level. Build with
+`trunk serve --release`.
 
 ### "font-kit" or system font panics on Android
 
