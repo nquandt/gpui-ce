@@ -167,6 +167,19 @@ impl SharedPreferences {
         }
     }
 
+    /// All stored keys. Empty on platforms without a backend, and on iOS,
+    /// where `NSUserDefaults` has no cheap key enumeration.
+    pub fn keys(&self) -> Vec<String> {
+        #[cfg(target_os = "android")]
+        {
+            self.inner.keys()
+        }
+        #[cfg(not(target_os = "android"))]
+        {
+            Vec::new()
+        }
+    }
+
     pub fn contains_key(&self, key: &str) -> bool {
         #[cfg(target_os = "ios")]
         {

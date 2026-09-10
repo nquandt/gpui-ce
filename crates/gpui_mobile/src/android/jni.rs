@@ -314,7 +314,11 @@ pub fn platform() -> Option<&'static Arc<AndroidPlatform>> {
 ///
 /// ```rust,no_run
 /// let platform = jni::shared_platform().unwrap();
-/// Application::with_platform(platform.into_rc()).run(|cx| { … });
+/// Application::with_platform(platform.into_rc()).run(|cx| {
+///     // Persist `cx.key_value_store()` in SharedPreferences (optional).
+///     cx.set_key_value_store(std::sync::Arc::new(gpui_mobile::android::AndroidKeyValueStore));
+///     …
+/// });
 /// ```
 ///
 /// Returns `None` before `init_platform` has been called.
