@@ -152,6 +152,8 @@ pub fn size<T>(width: T, height: T) -> Size<T> {
 pub mod dispatcher;
 pub mod display;
 pub mod jni;
+#[cfg(feature = "shared_preferences")]
+pub mod key_value_store;
 pub mod keyboard;
 pub mod platform;
 pub mod platform_view;
@@ -161,6 +163,8 @@ pub mod window;
 
 pub use dispatcher::AndroidDispatcher;
 pub use display::AndroidDisplay;
+#[cfg(feature = "shared_preferences")]
+pub use key_value_store::AndroidKeyValueStore;
 pub use keyboard::*;
 pub use platform::{AndroidPlatform, SharedPlatform};
 pub use window::{AndroidPlatformWindow, AndroidWindow, SafeAreaInsets};

@@ -147,6 +147,55 @@ impl AndroidSharedPreferences {
         })
     }
 
+    /// All keys in the default preferences, via `getAll().keySet()`.
+    pub fn keys(&self) -> Vec<String> {
+        jni_helpers::with_env(|env| {
+            let prefs = get_default_prefs(env).ok_or_else(|| "Failed to get prefs".to_string())?;
+            let map = env
+                .call_method(
+                    &prefs,
+                    jni::jni_str!("getAll"),
+                    jni::jni_sig!("()Ljava/util/Map;"),
+                    &[],
+                )
+                .and_then(|v| v.l())
+                .e()?;
+            let key_set = env
+                .call_method(
+                    &map,
+                    jni::jni_str!("keySet"),
+                    jni::jni_sig!("()Ljava/util/Set;"),
+                    &[],
+                )
+                .and_then(|v| v.l())
+                .e()?;
+            let array = env
+                .call_method(
+                    &key_set,
+                    jni::jni_str!("toArray"),
+                    jni::jni_sig!("()[Ljava/lang/Object;"),
+                    &[],
+                )
+                .and_then(|v| v.l())
+                .e()?;
+            if array.is_null() {
+                return Ok(Vec::new());
+            }
+            let array =
+                unsafe { jni::objects::JObjectArray::<JObject>::from_raw(env, array.as_raw()) };
+            let length = array.len(env).e()?;
+            let mut keys = Vec::with_capacity(length);
+            for index in 0..length {
+                let element: JObject = array.get_element(env, index).e()?;
+                if !element.is_null() {
+                    keys.push(get_string(env, &element));
+                }
+            }
+            Ok(keys)
+        })
+        .unwrap_or_default()
+    }
+
     pub fn contains_key(&self, key: &str) -> bool {
         let key = key.to_owned();
         jni_helpers::with_env(|env| {
