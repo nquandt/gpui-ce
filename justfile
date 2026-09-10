@@ -77,6 +77,9 @@ check-wasm-atomics:
     with-env {CARGO_TARGET_WASM32_UNKNOWN_UNKNOWN_RUSTFLAGS: "-C target-feature=+atomics,+bulk-memory,+mutable-globals"} {
         cargo +nightly -Zbuild-std=std,panic_abort check --target wasm32-unknown-unknown -p gpui_ce_platform
     }
+    print "🕸️ Checking hello_web example (nightly, uses its own .cargo/config.toml)..."
+    cd crates/gpui_web/examples/hello_web
+    cargo +nightly check --target wasm32-unknown-unknown
 
 [doc('Check examples + WASM web package — requires wasm32-unknown-unknown target to be installed')]
 [group('build')]
