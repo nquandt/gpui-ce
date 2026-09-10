@@ -200,7 +200,7 @@ gpui_linux = { path = "./crates/gpui_linux/", version = "0.1.0", package = "gpui
 gpui_macos = { path = "./crates/gpui_macos/", version = "0.1.0", package = "gpui_ce_macos" }
 gpui_apple = { path = "./crates/gpui_apple/", version = "0.1.0", package = "gpui_ce_apple" }
 gpui_windows = { path = "./crates/gpui_windows/", version = "0.1.0", package = "gpui_ce_windows" }
-gpui_web = { path = "./crates/gpui_web/", version = "0.1.0", package = "gpui_ce_web" }
+gpui_web = { path = "./crates/gpui_web/", version = "0.1.0", package = "gpui_ce_web", default-features = false }
 
 gpui_wgpu = { path = "./crates/gpui_wgpu/", version = "0.1.0", package = "gpui_ce_wgpu" }
 

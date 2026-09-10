@@ -89,7 +89,7 @@ check-wasm-atomics:
 check-examples:
     @echo "📐 Checking examples..."
     cargo build --package gpui-ce --examples
-    cargo check --package gpui_ce_web --target wasm32-unknown-unknown
+    cargo check --package gpui_ce_web --target wasm32-unknown-unknown --no-default-features
     cargo check --manifest-path examples/shared_core/Cargo.toml -p app-desktop
 
 
@@ -236,7 +236,7 @@ ci:
         })
         (run-check "check examples" {
             cargo build --package gpui-ce --examples
-            cargo check --package gpui_ce_web --target wasm32-unknown-unknown
+            cargo check --package gpui_ce_web --target wasm32-unknown-unknown --no-default-features
         })
         (if (available "typos") { run-check "typos" { typos } } else { skip "typos" "not installed" })
         (if (available "taplo") { run-check "taplo" { taplo fmt --check } } else { skip "taplo" "not installed" })
