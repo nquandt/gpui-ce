@@ -12,9 +12,11 @@
 //! `HTTPS_PROXY` are honoured by ureq's defaults.
 
 use anyhow::{Context as _, Result, anyhow};
+use futures::SinkExt as _;
 use futures::channel::oneshot;
 use futures::future::BoxFuture;
-use gpui::http_client::{HttpClient, HttpRequest, HttpResponse};
+use gpui::http_client::{HttpClient, HttpRequest, HttpResponse, StreamingResponse};
+use std::io::Read as _;
 use std::sync::Arc;
 
 /// Desktop HTTP client built on `ureq`.
@@ -47,6 +49,28 @@ impl UreqHttpClient {
     }
 
     fn perform(agent: &ureq::Agent, request: HttpRequest) -> Result<HttpResponse> {
+        let url = request.url.clone();
+        let response = Self::start(agent, request)?;
+        let (parts, mut body) = response.into_parts();
+        let bytes = body
+            .read_to_vec()
+            .with_context(|| format!("reading response body from {url}"))?;
+        Ok(HttpResponse {
+            status: parts.status,
+            headers: parts.headers,
+            body: bytes,
+        })
+    }
+
+    fn agent_for(&self, request: &HttpRequest) -> Arc<ureq::Agent> {
+        if request.follow_redirects {
+            self.following.clone()
+        } else {
+            self.manual.clone()
+        }
+    }
+
+    fn start(agent: &ureq::Agent, request: HttpRequest) -> Result<http::Response<ureq::Body>> {
         let mut builder = http::Request::builder()
             .method(request.method)
             .uri(request.url.as_str());
@@ -62,29 +86,63 @@ impl UreqHttpClient {
             None => http_request,
         };
 
-        let response = agent
+        agent
             .run(http_request)
-            .with_context(|| format!("request to {} failed", request.url))?;
-        let (parts, mut body) = response.into_parts();
-        let bytes = body
-            .read_to_vec()
-            .with_context(|| format!("reading response body from {}", request.url))?;
-
-        Ok(HttpResponse {
-            status: parts.status,
-            headers: parts.headers,
-            body: bytes,
-        })
+            .with_context(|| format!("request to {} failed", request.url))
     }
 }
 
+/// Bytes per chunk when streaming a body.
+const STREAM_CHUNK: usize = 64 * 1024;
+
 impl HttpClient for UreqHttpClient {
+    fn send_stream(&self, request: HttpRequest) -> BoxFuture<'static, Result<StreamingResponse>> {
+        let agent = self.agent_for(&request);
+        let (head_tx, head_rx) = oneshot::channel();
+        let (mut chunk_tx, chunk_rx) = futures::channel::mpsc::channel::<Result<Vec<u8>>>(4);
+        let spawned = std::thread::Builder::new()
+            .name("gpui-http-stream".into())
+            .spawn(move || {
+                let response = match Self::start(&agent, request) {
+                    Ok(response) => response,
+                    Err(error) => {
+                        let _ = head_tx.send(Err(error));
+                        return;
+                    }
+                };
+                let (parts, body) = response.into_parts();
+                if head_tx.send(Ok((parts.status, parts.headers))).is_err() {
+                    return;
+                }
+                let mut reader = body.into_reader();
+                let mut buffer = vec![0u8; STREAM_CHUNK];
+                loop {
+                    let item = match reader.read(&mut buffer) {
+                        Ok(0) => break,
+                        Ok(n) => Ok(buffer[..n].to_vec()),
+                        Err(error) => Err(anyhow!("reading response body: {error}")),
+                    };
+                    let failed = item.is_err();
+                    if futures::executor::block_on(chunk_tx.send(item)).is_err() || failed {
+                        break;
+                    }
+                }
+            });
+        Box::pin(async move {
+            spawned.context("failed to spawn HTTP worker thread")?;
+            let (status, headers) = head_rx
+                .await
+                .map_err(|_| anyhow!("HTTP worker thread exited without a response"))??;
+            Ok(StreamingResponse {
+                status,
+                headers,
+                body: Box::pin(chunk_rx),
+            })
+        })
+    }
+
     fn send(&self, request: HttpRequest) -> BoxFuture<'static, Result<HttpResponse>> {
-        let agent = if request.follow_redirects {
-            self.following.clone()
-        } else {
-            self.manual.clone()
-        };
+        let agent = self.agent_for(&request);
         let (tx, rx) = oneshot::channel();
         let spawned = std::thread::Builder::new()
             .name("gpui-http".into())
@@ -116,6 +174,26 @@ mod tests {
         assert!(response.is_success(), "status {}", response.status);
         assert!(response.header("content-type").is_some());
         assert!(response.text().contains("Example Domain"));
+    }
+
+    #[test]
+    #[ignore]
+    fn streams_body_in_chunks() {
+        use futures::StreamExt as _;
+        let client = UreqHttpClient::new();
+        let mut streaming =
+            block_on(client.send_stream(HttpRequest::get("https://example.com/"))).unwrap();
+        assert!(streaming.status.is_success());
+        let mut chunks = 0;
+        let mut body = Vec::new();
+        block_on(async {
+            while let Some(chunk) = streaming.body.next().await {
+                chunks += 1;
+                body.extend_from_slice(&chunk.unwrap());
+            }
+        });
+        assert!(chunks >= 1);
+        assert!(String::from_utf8_lossy(&body).contains("Example Domain"));
     }
 
     #[test]

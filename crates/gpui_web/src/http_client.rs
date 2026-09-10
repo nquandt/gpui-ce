@@ -1,12 +1,14 @@
 //! `fetch`-backed [`HttpClient`] for the browser.
 //!
-//! Requests carry method, headers and body through to `fetch`; the response
-//! status, headers and body are buffered into an [`HttpResponse`]. Browser
-//! rules still apply: cross-origin requests need CORS on the server, and the
-//! browser owns forbidden headers such as `Host` or `Cookie`.
+//! Requests carry method, headers, body and timeout through to `fetch`. The
+//! response status and headers become an [`HttpResponse`] or a
+//! [`StreamingResponse`]; the latter reads the body's `ReadableStream` chunk
+//! by chunk. Browser rules still apply: cross-origin requests need CORS on
+//! the server, and the browser owns forbidden headers such as `Host`.
 
 use anyhow::anyhow;
-use gpui::http_client::{HttpClient, HttpRequest, HttpResponse};
+use futures::stream::StreamExt as _;
+use gpui::http_client::{HttpClient, HttpRequest, HttpResponse, StreamingResponse};
 use http::{HeaderName, HeaderValue};
 use std::future::Future;
 use std::pin::Pin;
@@ -43,6 +45,9 @@ impl FetchHttpClient {
 }
 
 /// Wraps a `!Send` future to satisfy the `Send` bound on `BoxFuture`.
+///
+/// Sound in practice because the web executor polls these on the thread that
+/// created them; JavaScript values never actually cross threads.
 struct AssertSend<F>(F);
 
 unsafe impl<F> Send for AssertSend<F> {}
@@ -56,16 +61,114 @@ impl<F: Future> Future for AssertSend<F> {
     }
 }
 
+/// The stream counterpart of [`AssertSend`].
+struct AssertSendStream<S>(S);
+
+unsafe impl<S> Send for AssertSendStream<S> {}
+
+impl<S: futures::Stream> futures::Stream for AssertSendStream<S> {
+    type Item = S::Item;
+
+    fn poll_next(
+        self: Pin<&mut Self>,
+        cx: &mut std::task::Context<'_>,
+    ) -> Poll<Option<Self::Item>> {
+        let inner = unsafe { self.map_unchecked_mut(|this| &mut this.0) };
+        inner.poll_next(cx)
+    }
+}
+
 impl HttpClient for FetchHttpClient {
     fn send(
         &self,
         request: HttpRequest,
     ) -> futures::future::BoxFuture<'static, anyhow::Result<HttpResponse>> {
-        Box::pin(AssertSend(async move { perform(request).await }))
+        Box::pin(AssertSend(async move {
+            let started = start(request).await?;
+            let body_promise = started
+                .response
+                .array_buffer()
+                .map_err(|error| anyhow!("failed to initiate response body read: {error:?}"))?;
+            let body_value = wasm_bindgen_futures::JsFuture::from(body_promise)
+                .await
+                .map_err(|error| anyhow!("failed to read response body: {error:?}"))?;
+            let array_buffer: js_sys::ArrayBuffer = body_value
+                .dyn_into()
+                .map_err(|error| anyhow!("response body is not an ArrayBuffer: {error:?}"))?;
+            let body = js_sys::Uint8Array::new(&array_buffer).to_vec();
+            drop(started.timeout_guard);
+            Ok(HttpResponse {
+                status: started.status,
+                headers: started.headers,
+                body,
+            })
+        }))
+    }
+
+    fn send_stream(
+        &self,
+        request: HttpRequest,
+    ) -> futures::future::BoxFuture<'static, anyhow::Result<StreamingResponse>> {
+        Box::pin(AssertSend(async move {
+            let started = start(request).await?;
+            let Some(stream) = started.response.body() else {
+                return Ok(StreamingResponse {
+                    status: started.status,
+                    headers: started.headers,
+                    body: futures::stream::empty().boxed(),
+                });
+            };
+            let reader: web_sys::ReadableStreamDefaultReader = stream
+                .get_reader()
+                .dyn_into()
+                .map_err(|_| anyhow!("body reader is not a ReadableStreamDefaultReader"))?;
+
+            // The timeout guard travels with the stream so the abort timer
+            // stays armed until the last chunk has been read.
+            let state = (reader, started.timeout_guard, false);
+            let chunks = futures::stream::unfold(state, |(reader, guard, done)| async move {
+                if done {
+                    return None;
+                }
+                let result = wasm_bindgen_futures::JsFuture::from(reader.read()).await;
+                let item = match result {
+                    Err(error) => (Err(anyhow!("reading body chunk: {error:?}")), true),
+                    Ok(value) => {
+                        let result: web_sys::ReadableStreamReadResult = value.unchecked_into();
+                        let finished = result.get_done().unwrap_or(true);
+                        if finished {
+                            return None;
+                        }
+                        let chunk = result
+                            .get_value()
+                            .dyn_into::<js_sys::Uint8Array>()
+                            .map(|array| array.to_vec())
+                            .map_err(|_| anyhow!("body chunk is not a Uint8Array"));
+                        let failed = chunk.is_err();
+                        (chunk, failed)
+                    }
+                };
+                Some((item.0, (reader, guard, item.1)))
+            });
+
+            Ok(StreamingResponse {
+                status: started.status,
+                headers: started.headers,
+                body: AssertSendStream(chunks).boxed(),
+            })
+        }))
     }
 }
 
-async fn perform(request: HttpRequest) -> anyhow::Result<HttpResponse> {
+struct Started {
+    response: web_sys::Response,
+    status: http::StatusCode,
+    headers: http::HeaderMap,
+    timeout_guard: Option<TimeoutGuard>,
+}
+
+/// Issue the fetch and wait for the response head.
+async fn start(request: HttpRequest) -> anyhow::Result<Started> {
     let init = web_sys::RequestInit::new();
     init.set_method(request.method.as_str());
 
@@ -90,9 +193,7 @@ async fn perform(request: HttpRequest) -> anyhow::Result<HttpResponse> {
         init.set_body(&body);
     }
 
-    // Timeouts: abort the fetch from a setTimeout. The guard clears the timer
-    // (and keeps the closure alive) until the response body has been read.
-    let _timeout_guard = match request.timeout {
+    let timeout_guard = match request.timeout {
         Some(timeout) => Some(TimeoutGuard::arm(&init, timeout)?),
         None => None,
     };
@@ -106,30 +207,19 @@ async fn perform(request: HttpRequest) -> anyhow::Result<HttpResponse> {
         .await
         .map_err(|error| anyhow!("fetch failed: {error:?}"))?;
 
-    let web_response: web_sys::Response = response_value
+    let response: web_sys::Response = response_value
         .dyn_into()
         .map_err(|error| anyhow!("fetch result is not a Response: {error:?}"))?;
 
-    let status = http::StatusCode::from_u16(web_response.status())
+    let status = http::StatusCode::from_u16(response.status())
         .map_err(|_| anyhow!("invalid status code"))?;
+    let headers = collect_headers(&response.headers());
 
-    let response_headers = collect_headers(&web_response.headers());
-
-    let body_promise = web_response
-        .array_buffer()
-        .map_err(|error| anyhow!("failed to initiate response body read: {error:?}"))?;
-    let body_value = wasm_bindgen_futures::JsFuture::from(body_promise)
-        .await
-        .map_err(|error| anyhow!("failed to read response body: {error:?}"))?;
-    let array_buffer: js_sys::ArrayBuffer = body_value
-        .dyn_into()
-        .map_err(|error| anyhow!("response body is not an ArrayBuffer: {error:?}"))?;
-    let body = js_sys::Uint8Array::new(&array_buffer).to_vec();
-
-    Ok(HttpResponse {
+    Ok(Started {
+        response,
         status,
-        headers: response_headers,
-        body,
+        headers,
+        timeout_guard,
     })
 }
 

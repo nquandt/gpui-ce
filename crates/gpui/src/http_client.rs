@@ -11,6 +11,7 @@
 //! cases GPUI has today (images, JSON APIs).
 
 use futures::future::BoxFuture;
+use futures::stream::{BoxStream, StreamExt as _};
 use http::{HeaderMap, HeaderName, HeaderValue, Method, StatusCode};
 use serde::Serialize;
 use serde::de::DeserializeOwned;
@@ -69,6 +70,35 @@ impl HttpResponse {
     /// The value of a header as a string, if present and valid UTF-8.
     pub fn header(&self, name: &str) -> Option<&str> {
         self.headers.get(name).and_then(|value| value.to_str().ok())
+    }
+}
+
+/// A response whose body arrives in chunks.
+///
+/// Returned by [`HttpClient::send_stream`]. Read the chunks from `body`, or
+/// call [`collect`](Self::collect) to buffer the whole thing.
+pub struct StreamingResponse {
+    /// The HTTP status code.
+    pub status: StatusCode,
+    /// The response headers.
+    pub headers: HeaderMap,
+    /// Body chunks in order. The stream ends when the body is complete;
+    /// an `Err` item means the transfer failed part-way.
+    pub body: BoxStream<'static, anyhow::Result<Vec<u8>>>,
+}
+
+impl StreamingResponse {
+    /// Read every chunk and return a buffered [`HttpResponse`].
+    pub async fn collect(mut self) -> anyhow::Result<HttpResponse> {
+        let mut body = Vec::new();
+        while let Some(chunk) = self.body.next().await {
+            body.extend_from_slice(&chunk?);
+        }
+        Ok(HttpResponse {
+            status: self.status,
+            headers: self.headers,
+            body,
+        })
     }
 }
 
@@ -201,6 +231,26 @@ pub trait HttpClient: 'static + Send + Sync {
     fn post(&self, url: &str, body: Vec<u8>) -> BoxFuture<'static, anyhow::Result<HttpResponse>> {
         self.send(HttpRequest::post(url).body(body))
     }
+
+    /// Perform a request and return the body as a stream of chunks.
+    ///
+    /// The default buffers the whole response through [`send`](Self::send)
+    /// and yields it as one chunk, so every client supports this. Backends
+    /// that can stream override it to deliver chunks as they arrive.
+    fn send_stream(
+        &self,
+        request: HttpRequest,
+    ) -> BoxFuture<'static, anyhow::Result<StreamingResponse>> {
+        let buffered = self.send(request);
+        Box::pin(async move {
+            let response = buffered.await?;
+            Ok(StreamingResponse {
+                status: response.status,
+                headers: response.headers,
+                body: futures::stream::once(async move { Ok(response.body) }).boxed(),
+            })
+        })
+    }
 }
 
 /// An HTTP client that always returns an error.
@@ -308,6 +358,17 @@ mod tests {
         );
         let response = HttpResponse::new(StatusCode::OK, request.body);
         assert_eq!(response.json::<Item>().unwrap(), item);
+    }
+
+    #[test]
+    fn default_send_stream_yields_one_chunk() {
+        let client = FakeHttpClient::with_200_response();
+        let streaming =
+            futures::executor::block_on(client.send_stream(HttpRequest::get("https://x/")))
+                .unwrap();
+        assert_eq!(streaming.status, StatusCode::OK);
+        let response = futures::executor::block_on(streaming.collect()).unwrap();
+        assert!(response.body.is_empty());
     }
 
     #[test]
