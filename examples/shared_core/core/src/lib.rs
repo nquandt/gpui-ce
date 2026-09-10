@@ -6,6 +6,7 @@
 //! the `Application` and hand control to it.
 
 use anyhow::Result;
+use gpui::file_picker::FilePickerOptions;
 use gpui::http_client::HttpRequest;
 use gpui::key_value_store::KeyValueStoreExt as _;
 use gpui::{
@@ -105,7 +106,9 @@ enum Fetch {
 pub struct Demo {
     settings: Settings,
     fetch: Fetch,
+    picked: Option<String>,
     _fetch_task: Option<Task<()>>,
+    _pick_task: Option<Task<()>>,
 }
 
 impl Demo {
@@ -113,8 +116,40 @@ impl Demo {
         Self {
             settings: Settings::load(cx),
             fetch: Fetch::Idle,
+            picked: None,
             _fetch_task: None,
+            _pick_task: None,
         }
+    }
+
+    fn pick_file(&mut self, cx: &mut Context<Self>) {
+        let picker = cx.file_picker();
+        let options = FilePickerOptions::default()
+            .accept("image/*")
+            .accept(".txt");
+        self._pick_task = Some(cx.spawn(async move |this, cx| {
+            let outcome = picker.pick_files(options).await;
+            this.update(cx, |this, cx| {
+                this.picked = Some(match outcome {
+                    Ok(files) if files.is_empty() => "No file chosen.".to_owned(),
+                    Ok(files) => {
+                        let file = &files[0];
+                        format!(
+                            "{} ({} bytes{})",
+                            file.name,
+                            file.bytes.len(),
+                            file.mime_type
+                                .as_deref()
+                                .map(|mime| format!(", {mime}"))
+                                .unwrap_or_default()
+                        )
+                    }
+                    Err(error) => format!("Picker failed: {error:#}"),
+                });
+                cx.notify();
+            })
+            .ok();
+        }));
     }
 
     fn adjust(&mut self, delta: i32, cx: &mut Context<Self>) {
@@ -246,6 +281,23 @@ impl Render for Demo {
                             .text_sm()
                             .text_color(rgb(fetch_color))
                             .child(fetch_text),
+                    ),
+            )
+            .child(
+                div()
+                    .flex()
+                    .flex_col()
+                    .items_center()
+                    .gap_2()
+                    .child(button("pick", "Open file...", cx, |this, cx| {
+                        this.pick_file(cx)
+                    }))
+                    .child(
+                        div().text_sm().text_color(rgb(DIM)).child(
+                            self.picked
+                                .clone()
+                                .unwrap_or_else(|| "Pick an image or .txt file.".to_owned()),
+                        ),
                     ),
             )
     }

@@ -67,6 +67,7 @@ pub fn application_with_web_backend(backend_preference: WebBackendPreference) ->
         .with_key_value_store(std::sync::Arc::new(
             gpui_web::LocalStorageKeyValueStore::default(),
         ))
+        .with_file_picker(Rc::new(gpui_web::DomFilePicker))
 }
 
 /// Unlike `application`, this function returns a single-threaded web application.
@@ -79,6 +80,7 @@ pub fn single_threaded_web() -> gpui::Application {
         .with_key_value_store(std::sync::Arc::new(
             gpui_web::LocalStorageKeyValueStore::default(),
         ))
+        .with_file_picker(Rc::new(gpui_web::DomFilePicker))
 }
 
 /// Initializes panic hooks and logging for the web platform.

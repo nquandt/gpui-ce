@@ -374,7 +374,8 @@ Know these before you commit to the canvas approach:
   font with `include_bytes!` and register it with `cx.text_system().add_fonts`.
 - **One window.** Popups, dialogs and anchored windows return an error. Build
   overlays as in-tree elements.
-- **No file dialogs, credentials store or native prompts.**
+- **No path dialogs, credentials store or native prompts.** Use
+  `cx.file_picker()`, which returns file contents instead of paths.
 - **File paths are URLs.** `img(PathBuf)` and `svg().external_path(..)` look
   the path up in the `AssetSource` first, then fetch it relative to the page.
 - **No accessibility bridge.** Screen readers see an empty canvas.
@@ -596,6 +597,7 @@ GPUI exposes on every backend; each host installs the implementation that fits.
 | `cx.http_client()` (`HttpClient`, `HttpRequest`) | `ureq` with rustls (`UreqHttpClient`) | `fetch` | `NSURLSession` |
 | `cx.key_value_store()` (`KeyValueStore`) | JSON file in the user's data dir | `localStorage` | `NSUserDefaults` |
 | `AssetSource` (`Application::with_assets`) | your `include_bytes!` source | same | same |
+| `cx.file_picker()` (`FilePicker`, returns bytes) | native dialog + read | `<input type=file>` | document picker + read |
 
 ```rust
 use gpui::http_client::HttpRequest;
