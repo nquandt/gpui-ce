@@ -196,8 +196,11 @@ fn button(
     cx: &mut Context<Demo>,
     on_click: impl Fn(&mut Demo, &mut Context<Demo>) + 'static,
 ) -> impl IntoElement {
+    let label = label.into();
     div()
         .id(id)
+        .role(gpui::accesskit::Role::Button)
+        .aria_label(label.clone())
         .px_4()
         .py_2()
         .rounded_md()
@@ -205,7 +208,7 @@ fn button(
         .text_color(rgb(TEXT))
         .cursor_pointer()
         .hover(|style| style.bg(rgb(SURFACE_HOVER)))
-        .child(label.into())
+        .child(label)
         .on_click(cx.listener(move |this, _: &ClickEvent, _window, cx| on_click(this, cx)))
 }
 

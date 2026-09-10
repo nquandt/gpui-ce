@@ -378,7 +378,12 @@ Know these before you commit to the canvas approach:
   `cx.file_picker()`, which returns file contents instead of paths.
 - **File paths are URLs.** `img(PathBuf)` and `svg().external_path(..)` look
   the path up in the `AssetSource` first, then fetch it relative to the page.
-- **No accessibility bridge.** Screen readers see an empty canvas.
+- **Accessibility is a DOM mirror.** The web backend mirrors GPUI's
+  AccessKit tree into hidden, absolutely positioned DOM nodes with ARIA
+  roles, names, states and bounds, and routes focus, click, `Enter` and
+  `Space` back as AccessKit actions. Give interactive elements an id and a
+  `.role(..)`/`.aria_label(..)` so they appear in it; see the
+  accessibility guide in the gpui docs.
 - **`background_spawn` futures must be `Send`.** Browser APIs are not; call
   them from the foreground executor.
 
