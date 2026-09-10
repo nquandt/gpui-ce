@@ -18,6 +18,24 @@ pub fn application() -> gpui::Application {
 
     #[cfg(not(target_family = "wasm"))]
     gpui::Application::with_platform(current_platform(false))
+        .with_key_value_store(std::sync::Arc::new(default_key_value_store()))
+}
+
+/// The file-backed key-value store used by [`application`] on desktop.
+///
+/// The file lives under the user's data directory in a folder named after the
+/// executable. Call `Application::with_key_value_store` to use a different
+/// store or name.
+#[cfg(not(target_family = "wasm"))]
+pub fn default_key_value_store() -> gpui::key_value_store::FileKeyValueStore {
+    let app_name = std::env::current_exe()
+        .ok()
+        .and_then(|path| {
+            path.file_stem()
+                .map(|stem| stem.to_string_lossy().into_owned())
+        })
+        .unwrap_or_else(|| "gpui-app".to_owned());
+    gpui::key_value_store::FileKeyValueStore::for_app(&app_name)
 }
 
 pub fn headless() -> gpui::Application {
@@ -34,7 +52,11 @@ pub fn application_with_web_backend(backend_preference: WebBackendPreference) ->
         backend_preference,
     ));
     let http_client = std::sync::Arc::new(platform.fetch_http_client());
-    gpui::Application::with_platform(platform).with_http_client(http_client)
+    gpui::Application::with_platform(platform)
+        .with_http_client(http_client)
+        .with_key_value_store(std::sync::Arc::new(
+            gpui_web::LocalStorageKeyValueStore::default(),
+        ))
 }
 
 /// Unlike `application`, this function returns a single-threaded web application.
@@ -42,7 +64,11 @@ pub fn application_with_web_backend(backend_preference: WebBackendPreference) ->
 pub fn single_threaded_web() -> gpui::Application {
     let platform = Rc::new(gpui_web::WebPlatform::new(false));
     let http_client = std::sync::Arc::new(platform.fetch_http_client());
-    gpui::Application::with_platform(platform).with_http_client(http_client)
+    gpui::Application::with_platform(platform)
+        .with_http_client(http_client)
+        .with_key_value_store(std::sync::Arc::new(
+            gpui_web::LocalStorageKeyValueStore::default(),
+        ))
 }
 
 /// Initializes panic hooks and logging for the web platform.

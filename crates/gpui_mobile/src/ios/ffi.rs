@@ -524,6 +524,7 @@ pub fn run_app() {
         // remote images and other `cx.http_client()` users function. The app
         // callback may replace it.
         cx.set_http_client(std::sync::Arc::new(super::IosHttpClient));
+        cx.set_key_value_store(std::sync::Arc::new(super::IosKeyValueStore));
         if let Some(cb) = take_app_callback() {
             log::info!("GPUI iOS: Invoking user-provided app callback");
             cb(cx);
