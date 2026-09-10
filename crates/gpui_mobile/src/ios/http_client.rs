@@ -59,6 +59,10 @@ unsafe fn start_request(request_spec: &HttpRequest, sender: ResponseSender) -> R
         }
         let method = super::util::nsstring(request_spec.method.as_str());
         let _: () = msg_send![request, setHTTPMethod: method];
+        if let Some(timeout) = request_spec.timeout {
+            let seconds: f64 = timeout.as_secs_f64();
+            let _: () = msg_send![request, setTimeoutInterval: seconds];
+        }
 
         let user_agent = super::util::nsstring(concat!("gpui_mobile/", env!("CARGO_PKG_VERSION")));
         let header = super::util::nsstring("User-Agent");

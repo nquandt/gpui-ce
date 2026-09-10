@@ -14,6 +14,7 @@ use futures::future::BoxFuture;
 use http::{HeaderMap, HeaderName, HeaderValue, Method, StatusCode};
 use serde::Serialize;
 use serde::de::DeserializeOwned;
+use std::time::Duration;
 
 /// A fully buffered HTTP response.
 #[derive(Debug, Clone)]
@@ -94,6 +95,9 @@ pub struct HttpRequest {
     pub body: Vec<u8>,
     /// Whether the client should follow redirects automatically.
     pub follow_redirects: bool,
+    /// Give up after this long. `None` uses the client's default, which may
+    /// be unbounded. Applies to the whole request, including the body read.
+    pub timeout: Option<Duration>,
 }
 
 impl HttpRequest {
@@ -105,6 +109,7 @@ impl HttpRequest {
             headers: HeaderMap::new(),
             body: Vec::new(),
             follow_redirects: true,
+            timeout: None,
         }
     }
 
@@ -165,6 +170,12 @@ impl HttpRequest {
     /// Set whether redirects are followed. Defaults to `true`.
     pub fn follow_redirects(mut self, follow: bool) -> Self {
         self.follow_redirects = follow;
+        self
+    }
+
+    /// Fail the request if it has not completed after `timeout`.
+    pub fn timeout(mut self, timeout: Duration) -> Self {
+        self.timeout = Some(timeout);
         self
     }
 }
@@ -270,8 +281,10 @@ mod tests {
             .header("X-Test", "1")
             .header("bad header", "x")
             .body(vec![1, 2, 3])
-            .follow_redirects(false);
+            .follow_redirects(false)
+            .timeout(Duration::from_secs(5));
         assert_eq!(request.method, Method::PUT);
+        assert_eq!(request.timeout, Some(Duration::from_secs(5)));
         assert_eq!(request.headers.len(), 1);
         assert_eq!(request.body, vec![1, 2, 3]);
         assert!(!request.follow_redirects);
@@ -293,7 +306,7 @@ mod tests {
             request.header_value("content-type"),
             Some("application/json")
         );
-        let response = HttpResponse::new(StatusCode::OK, request.body.clone());
+        let response = HttpResponse::new(StatusCode::OK, request.body);
         assert_eq!(response.json::<Item>().unwrap(), item);
     }
 
