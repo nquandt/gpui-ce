@@ -12,14 +12,10 @@ name = "gpui_webview"
 [lints]
 workspace = true
 
-[features]
-default = ["webview"]
-webview = ["dep:wry"]
-
 [dependencies]
 gpui.workspace = true
 raw-window-handle = "0.6"
-wry = { workspace = true, optional = true }
+wry.workspace = true
 
 [dev-dependencies]
 gpui_platform = { workspace = true, features = ["font-kit", "wayland", "x11"] }

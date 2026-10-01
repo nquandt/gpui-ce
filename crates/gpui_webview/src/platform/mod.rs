@@ -21,14 +21,6 @@ pub(crate) trait PlatformWebView {
     fn focus(&self);
 }
 
-#[cfg(feature = "webview")]
 mod wry_backend;
 
-#[cfg(feature = "webview")]
 pub(crate) use wry_backend::*;
-
-#[cfg(not(feature = "webview"))]
-mod stub;
-
-#[cfg(not(feature = "webview"))]
-pub(crate) use stub::*;
