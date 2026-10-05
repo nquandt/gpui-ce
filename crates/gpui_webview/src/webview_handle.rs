@@ -67,6 +67,14 @@ impl WebViewHandle {
         self.inner.url()
     }
 
+    /// Show or hide the webview.
+    ///
+    /// The native webview draws above GPUI content, so hide it when other
+    /// elements must show in its place.
+    pub fn set_visible(&self, visible: bool) {
+        self.inner.set_visible(visible);
+    }
+
     /// Focus the webview.
     pub fn focus(&self) {
         self.inner.focus();

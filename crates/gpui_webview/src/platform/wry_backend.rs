@@ -176,10 +176,6 @@ impl PlatformWebView for WryWebView {
             .unwrap_or_default()
     }
 
-    fn set_devtools_enabled(&self, _enabled: bool) {
-        // wry devtools are enabled/disabled at creation time via the builder.
-    }
-
     fn focus(&self) {
         let _ = self.webview.focus();
     }

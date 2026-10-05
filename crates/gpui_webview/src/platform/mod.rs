@@ -1,6 +1,5 @@
 use gpui::{Bounds, Pixels, SharedString};
 
-#[allow(dead_code)]
 pub(crate) trait PlatformWebView {
     fn set_bounds(&self, bounds: Bounds<Pixels>);
     fn set_visible(&self, visible: bool);
@@ -17,7 +16,6 @@ pub(crate) trait PlatformWebView {
     );
     fn title(&self) -> SharedString;
     fn url(&self) -> SharedString;
-    fn set_devtools_enabled(&self, enabled: bool);
     fn focus(&self);
 }
 
